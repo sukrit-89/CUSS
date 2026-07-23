@@ -1,0 +1,2 @@
+-- Development seed file
+-- Use this file to populate the database with mock data for local development.

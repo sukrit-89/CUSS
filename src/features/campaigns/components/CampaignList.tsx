@@ -1,0 +1,1 @@
+export default function CampaignList() { return <div>CampaignList</div>; }
