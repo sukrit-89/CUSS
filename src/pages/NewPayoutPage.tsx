@@ -597,8 +597,14 @@ export function NewPayoutPage() {
 /** Helper: generate a CSV string from parsed recipients for the upload pipeline */
 function generateCSVFromParsed(recipients: ParsedRecipient[], defaultAmount: string): string {
   const header = 'name,email,wallet_address,amount';
+  const escapeField = (val: string) => `"${val.replace(/"/g, '""')}"`;
   const rows = recipients.map((r) =>
-    [r.name, r.email ?? '', r.wallet_address ?? '', r.amount ?? defaultAmount ?? ''].join(',')
+    [
+      escapeField(r.name),
+      escapeField(r.email ?? ''),
+      escapeField(r.wallet_address ?? ''),
+      escapeField(r.amount ?? defaultAmount ?? ''),
+    ].join(',')
   );
   return [header, ...rows].join('\n');
 }

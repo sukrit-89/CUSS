@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import {
-  Infinity,
+  Infinity as InfinityIcon,
   LayoutDashboard,
   PlusCircle,
   Users,
@@ -25,7 +25,7 @@ export function Sidebar() {
       <div>
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2.5 px-3 py-3 text-white font-medium text-lg mb-6">
-          <Infinity size={24} strokeWidth={1.5} />
+          <InfinityIcon size={24} strokeWidth={1.5} />
           <span>ReRail</span>
         </Link>
 

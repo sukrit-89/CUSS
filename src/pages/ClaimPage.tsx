@@ -35,12 +35,27 @@ export function ClaimPage() {
   const [copiedTx, setCopiedTx] = useState(false);
 
   const wallet = useWalletStore();
+  const checkFreighter = useWalletStore((state) => state.checkFreighter);
 
   // ── Resolve claim link on mount ──────────────────────────────────────────
   useEffect(() => {
     if (!token) {
       setClaimState('error');
       setErrorMessage('No claim token provided.');
+      return;
+    }
+
+    if (token === 'demo') {
+      setClaimData({
+        name: 'Demo Recipient',
+        amount: '250.00',
+        asset_code: 'USDC',
+        campaign_name: 'Acme Hackathon Grants',
+        balance_id: '000000008f3a74b92c1048d2e68a3f91c9e00000000000000000000000000000',
+        wallet_address: null,
+        deadline: null,
+      });
+      setClaimState('idle');
       return;
     }
 
@@ -75,8 +90,8 @@ export function ClaimPage() {
 
   // ── Check Freighter on mount ─────────────────────────────────────────────
   useEffect(() => {
-    wallet.checkFreighter();
-  }, []);
+    checkFreighter();
+  }, [checkFreighter]);
 
   // ── Claim handler ────────────────────────────────────────────────────────
   const handleClaim = useCallback(async () => {

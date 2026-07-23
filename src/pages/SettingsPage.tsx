@@ -6,12 +6,21 @@ export function SettingsPage() {
   const [apiKey, setApiKey] = useState('rr_live_948f2a10c...3819e4');
   const [copiedKey, setCopiedKey] = useState(false);
   const [orgName, setOrgName] = useState('Acme Crypto Org');
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   const teamMembers = [
     { email: 'alex@acme.com', role: 'Owner' },
     { email: 'sarah@acme.com', role: 'Admin' },
     { email: 'dev@acme.com', role: 'Developer' },
   ];
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setLogoUrl(url);
+    }
+  };
 
   const handleRegenerateKey = () => {
     const newKey = `rr_live_${Math.random().toString(36).substring(2, 12)}...${Math.random().toString(36).substring(2, 8)}`;
@@ -54,13 +63,18 @@ export function SettingsPage() {
               <div>
                 <label className="text-white/50 text-xs block mb-1.5 font-medium">Organization Logo</label>
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl liquid-glass flex items-center justify-center text-white/50 font-medium">
-                    AC
-                  </div>
-                  <button className="liquid-glass rounded-xl px-4 py-2 text-xs text-white/80 hover:text-white flex items-center gap-1.5 transition-colors">
+                  {logoUrl ? (
+                    <img src={logoUrl} alt="Logo" className="w-12 h-12 rounded-xl object-cover border border-white/10" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-xl liquid-glass flex items-center justify-center text-white/50 font-medium">
+                      {orgName.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                  <label className="liquid-glass rounded-xl px-4 py-2 text-xs text-white/80 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer">
                     <Upload size={14} strokeWidth={1.5} />
                     <span>Upload Logo</span>
-                  </button>
+                    <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+                  </label>
                 </div>
               </div>
             </div>

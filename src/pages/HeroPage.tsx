@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ChevronDown,
-  Infinity,
+  Infinity as InfinityIcon,
   Menu,
   X,
   ArrowRight,
@@ -46,25 +46,40 @@ export function HeroPage() {
         <nav className="relative z-20 w-full max-w-7xl mx-auto px-6 sm:px-12 py-5 flex items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 text-white font-medium text-base">
-            <Infinity size={22} strokeWidth={1.5} />
+            <InfinityIcon size={22} strokeWidth={1.5} />
             <span>ReRail</span>
           </Link>
 
           {/* Desktop Nav Pill */}
           <div className="hidden md:flex liquid-glass items-center gap-1 rounded-xl px-2 py-2">
             {navLinks.map((link) => (
-              <a
-                key={link.label}
-                href={link.path}
-                className={`flex items-center gap-0.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
-                  link.active
-                    ? 'bg-white/15 text-white'
-                    : 'text-white/70 hover:text-white'
-                }`}
-              >
-                <span>{link.label}</span>
-                {link.dropdown && <ChevronDown size={13} strokeWidth={1.5} className="mt-px" />}
-              </a>
+              link.path.startsWith('#') ? (
+                <a
+                  key={link.label}
+                  href={link.path}
+                  className={`flex items-center gap-0.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
+                    link.active
+                      ? 'bg-white/15 text-white'
+                      : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  <span>{link.label}</span>
+                  {link.dropdown && <ChevronDown size={13} strokeWidth={1.5} className="mt-px" />}
+                </a>
+              ) : (
+                <Link
+                  key={link.label}
+                  to={link.path}
+                  className={`flex items-center gap-0.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
+                    link.active
+                      ? 'bg-white/15 text-white'
+                      : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  <span>{link.label}</span>
+                  {link.dropdown && <ChevronDown size={13} strokeWidth={1.5} className="mt-px" />}
+                </Link>
+              )
             ))}
           </div>
 
@@ -372,7 +387,7 @@ export function HeroPage() {
         <div className="max-w-7xl mx-auto px-6 sm:px-12 py-10 flex flex-col sm:flex-row items-center justify-between gap-4">
           {/* Left */}
           <div className="flex items-center gap-2">
-            <Infinity size={18} strokeWidth={1.5} className="text-white/80" />
+            <InfinityIcon size={18} strokeWidth={1.5} className="text-white/80" />
             <span className="text-white/60 text-sm font-medium">ReRail</span>
             <span className="text-white/30 text-xs ml-2">© 2026</span>
           </div>

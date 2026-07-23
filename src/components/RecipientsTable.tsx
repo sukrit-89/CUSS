@@ -17,6 +17,7 @@ interface RecipientsTableProps {
 
 export function RecipientsTable({ data = [], limit }: RecipientsTableProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
   const displayData = limit ? data.slice(0, limit) : data;
 
@@ -25,6 +26,18 @@ export function RecipientsTable({ data = [], limit }: RecipientsTableProps) {
     navigator.clipboard.writeText(urlToCopy);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleResend = (id: string, claimUrl?: string) => {
+    const urlToCopy = claimUrl || `${window.location.origin}/claim/${id}`;
+    navigator.clipboard.writeText(urlToCopy);
+    setActionFeedback(`Resend link copied for recipient ${id.slice(0, 8)}`);
+    setTimeout(() => setActionFeedback(null), 2500);
+  };
+
+  const handleRevoke = (id: string) => {
+    setActionFeedback(`Claim link ${id.slice(0, 8)} marked for revocation`);
+    setTimeout(() => setActionFeedback(null), 2500);
   };
 
   if (displayData.length === 0) {
@@ -37,7 +50,13 @@ export function RecipientsTable({ data = [], limit }: RecipientsTableProps) {
   }
 
   return (
-    <div className="liquid-glass rounded-2xl overflow-hidden w-full">
+    <div className="liquid-glass rounded-2xl overflow-hidden w-full relative">
+      {actionFeedback && (
+        <div className="bg-[#22c55e]/15 border-b border-[#22c55e]/30 px-6 py-2 text-xs text-[#22c55e] font-medium flex items-center justify-between">
+          <span>{actionFeedback}</span>
+          <button onClick={() => setActionFeedback(null)} className="text-white/40 hover:text-white">✕</button>
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -95,12 +114,14 @@ export function RecipientsTable({ data = [], limit }: RecipientsTableProps) {
                       )}
                     </button>
                     <button
+                      onClick={() => handleResend(row.id, row.claimUrl)}
                       title="Resend Payout"
                       className="p-1.5 rounded-lg text-white/40 hover:text-white transition-colors"
                     >
                       <RotateCcw size={16} strokeWidth={1.5} />
                     </button>
                     <button
+                      onClick={() => handleRevoke(row.id)}
                       title="Revoke Claim Link"
                       className="p-1.5 rounded-lg text-white/40 hover:text-white hover:text-red-400 transition-colors"
                     >

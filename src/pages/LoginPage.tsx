@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Infinity, Loader2 } from 'lucide-react';
+import { Infinity as InfinityIcon, Loader2 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 
 export function LoginPage() {
@@ -53,7 +53,7 @@ export function LoginPage() {
           {/* Logo Mark */}
           <div className="flex flex-col items-center gap-2 text-center">
             <div className="flex items-center gap-2 text-white font-medium text-xl">
-              <Infinity size={28} strokeWidth={1.5} />
+              <InfinityIcon size={28} strokeWidth={1.5} />
               <span>ReRail</span>
             </div>
             <p className="text-white/40 text-xs">Gasless USDC Payout Infrastructure</p>
