@@ -44,10 +44,6 @@ USING (
   )
 );
 
-CREATE POLICY "Recipients claim lookup is public" 
-ON public.recipients FOR SELECT 
-USING (claim_link_token IS NOT NULL);
-
 -- transactions
 CREATE POLICY "Transactions are visible to campaign organizer" 
 ON public.transactions FOR SELECT 

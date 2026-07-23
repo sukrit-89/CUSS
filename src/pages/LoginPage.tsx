@@ -1,16 +1,43 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Infinity } from 'lucide-react';
+import { Infinity, Loader2 } from 'lucide-react';
+import { useAuthStore } from '@/stores/auth.store';
 
 export function LoginPage() {
   const [tab, setTab] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const navigate = useNavigate();
+  const { signIn, isAuthenticated, user, initialize } = useAuthStore();
+
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
+
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      navigate('/dashboard');
+    }
+  }, [isAuthenticated, user, navigate]);
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setIsSubmitting(true);
+      setAuthError(null);
+      await signIn();
+    } catch (err: unknown) {
+      setAuthError(err instanceof Error ? err.message : 'Failed to sign in with Google');
+      setIsSubmitting(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    navigate('/dashboard');
+    // Email/Password login is illustrative - prompt user to use Google OAuth
+    setAuthError('Please use Google OAuth for instant authentication during the testnet phase.');
   };
 
   return (
@@ -52,6 +79,39 @@ export function LoginPage() {
             </button>
           </div>
 
+          {/* Social login */}
+          <button
+            onClick={handleGoogleSignIn}
+            disabled={isSubmitting}
+            className="w-full bg-white text-black text-sm font-medium rounded-full px-6 py-2.5 hover:bg-white/90 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {isSubmitting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <svg className="w-4 h-4" viewBox="0 0 24 24">
+                <path
+                  fill="currentColor"
+                  d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.761H12.545z"
+                />
+              </svg>
+            )}
+            <span>Continue with Google</span>
+          </button>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 border-t border-white/10" />
+            <span className="text-white/30 text-xs">or email</span>
+            <div className="flex-1 border-t border-white/10" />
+          </div>
+
+          {/* Error display */}
+          {authError && (
+            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs text-center">
+              {authError}
+            </div>
+          )}
+
           {/* Form */}
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
             <div>
@@ -80,32 +140,11 @@ export function LoginPage() {
 
             <button
               type="submit"
-              className="w-full bg-white text-black font-medium rounded-full px-6 py-2.5 text-sm hover:bg-white/90 transition-colors mt-2"
+              className="w-full liquid-glass text-white/70 text-sm font-medium rounded-full px-6 py-2.5 hover:bg-white/5 transition-colors mt-2"
             >
-              Continue
+              Continue with Email
             </button>
           </form>
-
-          {/* Divider */}
-          <div className="flex items-center gap-3">
-            <div className="flex-1 border-t border-white/10" />
-            <span className="text-white/30 text-xs">or</span>
-            <div className="flex-1 border-t border-white/10" />
-          </div>
-
-          {/* Social login */}
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="w-full liquid-glass text-white text-sm font-medium rounded-full px-6 py-2.5 hover:bg-white/5 transition-colors flex items-center justify-center gap-2"
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24">
-              <path
-                fill="currentColor"
-                d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.761H12.545z"
-              />
-            </svg>
-            <span>Continue with Google</span>
-          </button>
 
           {/* Forgot Password */}
           <div className="text-center">

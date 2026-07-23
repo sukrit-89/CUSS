@@ -1,152 +1,136 @@
-# ReRail
+# ReRail — Gasless Payout Infrastructure on Stellar
 
-> Gasless payout infrastructure on Stellar. Campaign → Claim Link → Paid.
+> **Set up a grant. Send a link. Get paid — no wallet setup or XLM required.**
 
-[![Stellar](https://img.shields.io/badge/Stellar-Testnet-blue)](https://stellar.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+ReRail is a gasless payout infrastructure platform built on Stellar that enables organizations to distribute USDC rewards, hackathon prizes, scholarships, and community grants through secure, shareable claim links.
 
----
-
-## What is ReRail?
-
-ReRail enables organisations to distribute USDC rewards, hackathon prizes, scholarships, and grants through secure, shareable claim links on Stellar.
-
-**Recipients claim funds without ever holding XLM.** Organizers manage campaigns through a clean dashboard. Every distribution is on-chain, transparent, and auditable.
-
-### How It Works
-
-1. **Create a campaign** — set pool size, per-recipient amount, and optional deadline
-2. **Upload recipients** — CSV with name, email, and wallet address (wallet optional)
-3. **Send claim links** — each recipient gets a unique URL; they claim gaslessly
-
-### Stellar Primitives Used
-
-| Primitive | Purpose |
-|---|---|
-| **Claimable Balances** | Lock USDC per recipient with time-gated access |
-| **Fee Bump Transactions** | Sponsor every claim — recipients pay zero gas |
-| **Sponsored Accounts** | Create Stellar accounts for non-crypto users (L6) |
+Recipients claim funds without ever holding XLM or needing gas tokens. Organizers manage campaigns through an intuitive, real-time dashboard. Every distribution is verifiable, transparent, and auditable on-chain.
 
 ---
 
-## Tech Stack
+## 🌟 Key Features
 
-| Layer | Technology |
-|---|---|
-| Frontend | React 19 + Vite + TypeScript |
-| Styling | Tailwind CSS v4 |
-| State | Zustand |
-| Routing | React Router v7 |
-| Database | Supabase (PostgreSQL + RLS) |
-| Auth | Supabase Auth (Google OAuth) |
-| Wallet | @stellar/freighter-api |
-| Blockchain | @stellar/stellar-sdk v16 |
-| Serverless | Vercel Functions |
-| Hosting | Vercel |
+* **Gasless Payout Links:** Every claim link is powered by Stellar native **Claimable Balances** and wrapped in **Fee Bump Transactions**. Recipients pay zero gas fees.
+* **Bulk CSV Upload & Parsing:** Upload hundreds of payout recipients in seconds with automatic address validation, injection protection, and error reporting.
+* **Organizer Dashboard:** Track real-time distribution progress, claim rates, active links, and recipient statuses (`Pending`, `Claimed`, `Expired`).
+* **Non-Crypto Friendly:** Send claim URLs over email, Slack, Discord, or Telegram. Recipients connect a wallet or create one when claiming.
+* **Soroban Contract Registry:** Optional on-chain campaign registry contract (`rerail_registry`) for immutable audit trails and contract-level campaign verification.
+* **Automated Expiry & Reclaim:** Organizers can enforce deadline predicates so unclaimed balances auto-expire and return to the organization's treasury after a set period.
 
 ---
 
-## Quick Start
+## 🏗️ Technical Architecture
+
+```
+[Organizer Browser]
+        ↓
+[React + Vite + TypeScript Frontend]  ←──→  [Supabase (Auth + PostgreSQL + RLS)]
+        ↓
+[Stellar SDK (JS) + Horizon API]
+        ↓
+[Stellar Network — Testnet]
+        ↙                      ↘
+[Claimable Balances]    [Fee Bump Transactions]
+                                ↑
+                    [ReRail Fee Payer Account]
+
+[Recipient Browser]
+        ↓
+[Claim Page (React)]
+        ↓
+[Freighter Wallet / Sponsored New Account]
+        ↓
+[Fee Bump Transaction → Stellar Network]
+```
+
+### Stack Overview
+* **Frontend:** React 19, Vite, TypeScript, Tailwind CSS
+* **Blockchain:** `@stellar/stellar-sdk`, `@stellar/freighter-api`, Soroban Smart Contracts (Rust)
+* **Backend / Database:** Supabase (PostgreSQL, Row Level Security, Auth)
+* **Serverless Functions:** Vercel API routes for server-side fee-bump wrapping
+
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
 
-- Node.js 20+
-- npm 10+
-- [Freighter Wallet](https://freighter.app/) browser extension
-- Supabase project (free tier works)
+* Node.js v20+ or Bun v1.3+
+* Freighter Wallet extension installed in browser
+* Supabase project (for database & auth)
 
-### Setup
+### Installation
 
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/sukrit-89/CUSS.git rerail
+   cd rerail
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   # or with bun:
+   bun install
+   ```
+
+3. Environment Setup:
+   Copy `.env.example` to `.env.local` and configure your environment variables:
+   ```bash
+   cp .env.example .env.local
+   ```
+
+   ```env
+   VITE_SUPABASE_URL=https://your-supabase-url.supabase.co
+   VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+   VITE_HORIZON_URL=https://horizon-testnet.stellar.org
+   VITE_NETWORK_PASSPHRASE="Test SDF Network ; September 2015"
+   VITE_USDC_ISSUER=GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5
+   VITE_CLAIM_LINK_BASE_URL=http://localhost:5173
+   ```
+
+4. Run local development server:
+   ```bash
+   npm run dev
+   # or with bun:
+   bun dev
+   ```
+
+---
+
+## 📜 Soroban Smart Contract (`rerail_registry`)
+
+The repository includes a Soroban smart contract written in Rust under `contracts/rerail_registry`.
+
+### Build Contract
 ```bash
-# Clone
-git clone https://github.com/your-org/rerail.git
-cd rerail
-
-# Install dependencies
-npm install
-
-# Copy env template
-cp .env.example .env.local
-# Fill in your Supabase URL and keys
-
-# Generate testnet accounts
-npx tsx scripts/generate-testnet-accounts.ts
-
-# Set up USDC trustlines
-npx tsx scripts/setup-usdc-trustline.ts
-
-# Run E2E test
-npx tsx scripts/test-claim-flow.ts
-
-# Start dev server
-npm run dev
+npm run contracts:build
 ```
 
-### Environment Variables
-
-See [.env.example](.env.example) for all required variables.
-
----
-
-## Project Structure
-
-```
-rerail/
-├── api/                     Vercel serverless functions
-│   └── claim/[token]/       Claim resolution + execution
-├── docs/                    Architecture documentation
-├── scripts/                 Developer tooling
-├── src/
-│   ├── app/                 App shell, router, providers
-│   ├── config/              Constants, env, Stellar config
-│   ├── features/            Domain modules
-│   │   ├── auth/            Authentication
-│   │   ├── campaigns/       Campaign management
-│   │   ├── claims/          Claim flow
-│   │   └── dashboard/       Dashboard & analytics
-│   ├── lib/                 Shared infrastructure
-│   │   ├── stellar/         Stellar SDK wrappers
-│   │   ├── supabase/        Database client + queries
-│   │   └── utils/           Validation, formatting, UUID
-│   ├── shared/              Shared UI components
-│   ├── stores/              Zustand state management
-│   └── styles/              Global CSS + design tokens
-└── supabase/                Database migrations
+### Run Contract Tests
+```bash
+npm run contracts:test
 ```
 
----
-
-## Documentation
-
-| Document | Description |
-|---|---|
-| [Architecture](docs/ARCHITECTURE.md) | System design, data flows, deployment |
-| [Security](docs/SECURITY.md) | Threat model, key management, RLS |
-| [Stellar Integration](docs/STELLAR_INTEGRATION.md) | Claimable Balances, Fee Bumps, batching |
-| [API Reference](docs/API.md) | Serverless endpoint specs |
+### Contract Functions Summary
+* `create_campaign`: Initializes a campaign on-chain with default amounts and deadlines.
+* `register_recipient`: Links a recipient address and claim token hash to a campaign.
+* `activate_campaign`: Transitions campaign status from `Draft` to `Active`.
+* `mark_balance_created`: Binds an on-chain Stellar claimable balance ID to a recipient record.
+* `record_claim`: Records an executed claim on-chain.
+* `expire_campaign`: Marks a campaign expired after the deadline.
 
 ---
 
-## Security Highlights
+## 🔐 Security & Key Management
 
-- **No custodial keys** — organiser and recipient keys never touch ReRail servers
-- **Fee payer isolation** — holds only XLM for fees, never USDC
-- **Row Level Security** — every database query scoped to the authenticated organiser
-- **Protocol-level guarantees** — Stellar enforces claim predicates, prevents double-claims
-- **CSV sanitisation** — injection protection on all uploaded data
-
----
-
-## Stellar Rise In Belt Program
-
-This project is built for the Stellar Rise In Belt Program:
-
-- **L5 (MVP)**: Fully functional on testnet with 5+ users
-- **L6 (Production)**: 30+ active users, metrics dashboard, monitoring
+* **No Custodial Keys:** Organizers sign campaign creation transactions directly using Freighter in their browser.
+* **Server-Side Fee Payer:** Fee payer secret keys live exclusively as server-side environment variables (`FEE_PAYER_SECRET`) in serverless handlers and are never exposed to the client.
+* **Un-guessable Claim Links:** Claim URLs use UUID v4 tokens with 128-bit entropy.
+* **Row Level Security (RLS):** Supabase RLS guarantees organizers can only access their own campaign data.
 
 ---
 
-## License
+## 📄 License
 
-MIT
+This project is licensed under the [MIT License](LICENSE).

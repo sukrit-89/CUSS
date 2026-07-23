@@ -1,16 +1,38 @@
 import { createClient } from '@supabase/supabase-js';
-import { TransactionBuilder, Keypair, Networks, server as HorizonServer } from '@stellar/stellar-sdk';
+import {
+  Horizon,
+  Keypair,
+  Networks,
+  StrKey,
+  TransactionBuilder,
+} from '@stellar/stellar-sdk';
+
+const UUID_V4_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function getStringBodyValue(body: any, key: string): string | null {
+  const value = body?.[key];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function firstJoinedRow<T>(row: T | T[] | null | undefined): T | null {
+  return Array.isArray(row) ? (row[0] ?? null) : (row ?? null);
+}
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { token } = req.query;
-  const { signed_inner_tx_xdr } = req.body;
+  const token = Array.isArray(req.query.token) ? req.query.token[0] : req.query.token;
+  const signedInnerTxXdr = getStringBodyValue(req.body, 'signed_inner_tx_xdr');
 
-  if (!token || !signed_inner_tx_xdr) {
-    return res.status(400).json({ error: 'Missing token or signed XDR' });
+  if (!token || !UUID_V4_RE.test(token)) {
+    return res.status(400).json({ error: 'Valid claim token is required' });
+  }
+
+  if (!signedInnerTxXdr) {
+    return res.status(400).json({ error: 'signed_inner_tx_xdr is required' });
   }
 
   const supabaseUrl = process.env.SUPABASE_URL || '';
@@ -24,13 +46,13 @@ export default async function handler(req: any, res: any) {
   }
 
   const supabase = createClient(supabaseUrl, supabaseKey);
-  const server = new HorizonServer(horizonUrl);
+  const server = new Horizon.Server(horizonUrl);
 
   try {
     const { data: recipient, error } = await supabase
       .from('recipients')
-      .select('*, campaigns(balance_id)')
-      .eq('claim_token', token)
+      .select('id, campaign_id, wallet_address, claimable_balance_id, status, campaigns(deadline)')
+      .eq('claim_link_token', token)
       .single();
 
     if (error || !recipient) {
@@ -41,12 +63,42 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'Claim already executed or invalid status' });
     }
 
+    if (!recipient.claimable_balance_id) {
+      return res.status(409).json({ error: 'Claimable balance has not been created yet' });
+    }
+
+    if (!recipient.wallet_address || !StrKey.isValidEd25519PublicKey(recipient.wallet_address)) {
+      return res.status(409).json({ error: 'Recipient wallet address is missing or invalid' });
+    }
+
+    const campaign = firstJoinedRow(recipient.campaigns);
+
+    if (campaign?.deadline && new Date() > new Date(campaign.deadline)) {
+      return res.status(410).json({ error: 'Claim expired' });
+    }
+
+    const innerTx = TransactionBuilder.fromXDR(signedInnerTxXdr, networkPassphrase) as any;
+    const operations = innerTx.operations ?? [];
+    const operation = operations[0];
+    const operationSource = operation?.source ?? innerTx.source;
+
+    if (operations.length !== 1 || operation?.type !== 'claimClaimableBalance') {
+      return res.status(400).json({ error: 'Inner transaction must contain exactly one claimClaimableBalance operation' });
+    }
+
+    if (operation.balanceId !== recipient.claimable_balance_id) {
+      return res.status(400).json({ error: 'Inner transaction balance ID does not match claim link' });
+    }
+
+    if (operationSource !== recipient.wallet_address) {
+      return res.status(400).json({ error: 'Inner transaction source does not match recipient wallet' });
+    }
+
     const feePayer = Keypair.fromSecret(feePayerSecret);
-    const innerTx = TransactionBuilder.fromXDR(signed_inner_tx_xdr, networkPassphrase) as any;
-    
+
     const feeBumpTx = TransactionBuilder.buildFeeBumpTransaction(
       feePayer,
-      1000,
+      '1000',
       innerTx,
       networkPassphrase
     );
@@ -56,12 +108,28 @@ export default async function handler(req: any, res: any) {
     const submitResult = await server.submitTransaction(feeBumpTx);
 
     if (submitResult.successful) {
+      const claimedAt = new Date().toISOString();
+
       await supabase
         .from('recipients')
-        .update({ status: 'claimed' })
+        .update({ status: 'claimed', claimed_at: claimedAt })
         .eq('id', recipient.id);
-        
-      return res.status(200).json({ success: true, hash: submitResult.hash });
+
+      await supabase
+        .from('transactions')
+        .insert({
+          recipient_id: recipient.id,
+          campaign_id: recipient.campaign_id,
+          tx_hash: submitResult.hash,
+          tx_type: 'claim',
+          stellar_response: submitResult,
+        });
+
+      return res.status(200).json({
+        success: true,
+        hash: submitResult.hash,
+        tx_hash: submitResult.hash,
+      });
     } else {
       return res.status(500).json({ error: 'Transaction submission failed', details: submitResult });
     }

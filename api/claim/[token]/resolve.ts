@@ -1,14 +1,21 @@
 import { createClient } from '@supabase/supabase-js';
 
+const UUID_V4_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function firstJoinedRow<T>(row: T | T[] | null | undefined): T | null {
+  return Array.isArray(row) ? (row[0] ?? null) : (row ?? null);
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { token } = req.query;
+  const token = Array.isArray(req.query.token) ? req.query.token[0] : req.query.token;
 
-  if (!token) {
-    return res.status(400).json({ error: 'Token is required' });
+  if (!token || !UUID_V4_RE.test(token)) {
+    return res.status(400).json({ error: 'Valid claim token is required' });
   }
 
   const supabaseUrl = process.env.SUPABASE_URL || '';
@@ -23,8 +30,8 @@ export default async function handler(req: any, res: any) {
   try {
     const { data: recipient, error } = await supabase
       .from('recipients')
-      .select('*, campaigns(name, claim_deadline, balance_id)')
-      .eq('claim_token', token)
+      .select('id, name, amount, wallet_address, claimable_balance_id, claim_link_token, status, claimed_at, campaigns(id, name, deadline, amount_per_recipient, token)')
+      .eq('claim_link_token', token)
       .single();
 
     if (error || !recipient) {
@@ -35,18 +42,22 @@ export default async function handler(req: any, res: any) {
       return res.status(410).json({ error: 'Already claimed' });
     }
 
-    if (recipient.campaigns?.claim_deadline && new Date() > new Date(recipient.campaigns.claim_deadline)) {
+    const campaign = firstJoinedRow(recipient.campaigns);
+
+    if (campaign?.deadline && new Date() > new Date(campaign.deadline)) {
       return res.status(410).json({ error: 'Claim expired' });
     }
 
     return res.status(200).json({
       name: recipient.name,
-      amount: recipient.amount,
-      token: recipient.claim_token,
+      amount: recipient.amount ?? campaign?.amount_per_recipient,
+      asset_code: campaign?.token,
+      token: recipient.claim_link_token,
       status: recipient.status,
-      campaign_name: recipient.campaigns?.name,
-      deadline: recipient.campaigns?.claim_deadline,
-      balance_id: recipient.campaigns?.balance_id
+      campaign_name: campaign?.name,
+      deadline: campaign?.deadline,
+      balance_id: recipient.claimable_balance_id,
+      wallet_address: recipient.wallet_address,
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
