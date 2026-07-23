@@ -2,7 +2,7 @@ import {
   getCampaigns,
   getCampaignById,
   createCampaign,
-  updateCampaign,
+  updateCampaignStatus as updateCampaignStatusQuery,
 } from '@/lib/supabase/queries/campaigns';
 import { getRecipientsByCampaign } from '@/lib/supabase/queries/recipients';
 import type { Database } from '@/lib/supabase/database.types';
@@ -57,7 +57,7 @@ export class CampaignService {
     id: string,
     status: CampaignRow['status']
   ): Promise<CampaignRow> {
-    return updateCampaign(id, { status });
+    return updateCampaignStatusQuery(id, status);
   }
 
   /**

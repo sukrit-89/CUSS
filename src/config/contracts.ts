@@ -1,0 +1,4 @@
+export const RERAIL_REGISTRY_CONTRACT_ID =
+  import.meta.env.VITE_RERAIL_REGISTRY_CONTRACT_ID ?? '';
+
+export const CONTRACTS_ENABLED = RERAIL_REGISTRY_CONTRACT_ID.length > 0;

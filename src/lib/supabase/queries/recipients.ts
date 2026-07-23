@@ -105,6 +105,34 @@ export async function updateRecipient(id: string, input: RecipientUpdate): Promi
 }
 
 /**
+ * Stores the on-chain claimable balance ID for a recipient.
+ * @param id The recipient UUID
+ * @param claimableBalanceId Stellar claimable balance ID
+ */
+export async function updateRecipientClaimableBalance(
+  id: string,
+  claimableBalanceId: string,
+): Promise<RecipientRow> {
+  return updateRecipient(id, { claimable_balance_id: claimableBalanceId });
+}
+
+/**
+ * Stores claimable balance IDs after the organizer submits creation txs.
+ * The caller is responsible for mapping IDs from Stellar effects to recipients.
+ */
+export async function updateRecipientClaimableBalances(
+  updates: Array<{ id: string; claimableBalanceId: string }>,
+): Promise<RecipientRow[]> {
+  const rows: RecipientRow[] = [];
+
+  for (const update of updates) {
+    rows.push(await updateRecipientClaimableBalance(update.id, update.claimableBalanceId));
+  }
+
+  return rows;
+}
+
+/**
  * Updates a recipient's status.
  * @param id The recipient UUID
  * @param status The new status

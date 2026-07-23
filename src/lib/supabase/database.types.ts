@@ -16,6 +16,9 @@ export interface Database {
           deadline: string | null;
           status: 'draft' | 'active' | 'completed' | 'expired';
           treasury_address: string | null;
+          registry_contract_id: string | null;
+          registry_campaign_id: number | null;
+          registry_create_tx_hash: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -30,6 +33,9 @@ export interface Database {
           deadline?: string | null;
           status?: 'draft' | 'active' | 'completed' | 'expired';
           treasury_address?: string | null;
+          registry_contract_id?: string | null;
+          registry_campaign_id?: number | null;
+          registry_create_tx_hash?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -44,6 +50,9 @@ export interface Database {
           deadline?: string | null;
           status?: 'draft' | 'active' | 'completed' | 'expired';
           treasury_address?: string | null;
+          registry_contract_id?: string | null;
+          registry_campaign_id?: number | null;
+          registry_create_tx_hash?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -58,6 +67,9 @@ export interface Database {
           amount: string | null;
           claimable_balance_id: string | null;
           claim_link_token: string;
+          claim_token_hash: string | null;
+          registry_status: 'pending' | 'funded' | 'claimed' | 'expired' | null;
+          registry_tx_hash: string | null;
           status: 'pending' | 'claimed' | 'expired';
           claimed_at: string | null;
           created_at: string;
@@ -71,6 +83,9 @@ export interface Database {
           amount?: string | null;
           claimable_balance_id?: string | null;
           claim_link_token?: string;
+          claim_token_hash?: string | null;
+          registry_status?: 'pending' | 'funded' | 'claimed' | 'expired' | null;
+          registry_tx_hash?: string | null;
           status?: 'pending' | 'claimed' | 'expired';
           claimed_at?: string | null;
           created_at?: string;
@@ -84,6 +99,9 @@ export interface Database {
           amount?: string | null;
           claimable_balance_id?: string | null;
           claim_link_token?: string;
+          claim_token_hash?: string | null;
+          registry_status?: 'pending' | 'funded' | 'claimed' | 'expired' | null;
+          registry_tx_hash?: string | null;
           status?: 'pending' | 'claimed' | 'expired';
           claimed_at?: string | null;
           created_at?: string;

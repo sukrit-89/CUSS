@@ -24,6 +24,9 @@ export interface Campaign {
   deadline: string | null;
   status: CampaignStatusValue;
   treasury_address: string | null;
+  registry_contract_id: string | null;
+  registry_campaign_id: number | null;
+  registry_create_tx_hash: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -57,6 +60,9 @@ export interface Recipient {
   claimable_balance_id: string | null;
   claim_link_token: string;
   status: RecipientStatusValue;
+  claim_token_hash: string | null;
+  registry_status: RecipientStatusValue | null;
+  registry_tx_hash: string | null;
   claimed_at: string | null;
   created_at: string;
 }

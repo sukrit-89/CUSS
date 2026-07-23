@@ -79,6 +79,18 @@ export async function updateCampaign(id: string, input: CampaignUpdate): Promise
 }
 
 /**
+ * Updates a campaign's lifecycle status.
+ * @param id The campaign UUID
+ * @param status The new campaign status
+ */
+export async function updateCampaignStatus(
+  id: string,
+  status: CampaignRow['status'],
+): Promise<CampaignRow> {
+  return updateCampaign(id, { status });
+}
+
+/**
  * Deletes a campaign.
  * @param id The campaign UUID
  */
