@@ -10,10 +10,9 @@ import {
   Link as LinkIcon,
   ShieldCheck,
 } from 'lucide-react';
-import { LiquidGlassFooter } from '@/components/LiquidGlassFooter';
+import { LiquidGlassFooter } from '../components/LiquidGlassFooter';
 
-const BG_VIDEO =
-  'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260429_114316_1c7889ad-2885-410e-b493-98119fee0ddb.mp4';
+const BG_VIDEO = 'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260429_114316_1c7889ad-2885-410e-b493-98119fee0ddb.mp4';
 
 const navLinks = [
   { label: 'Home', active: true, path: '/' },
@@ -26,23 +25,25 @@ export function HeroPage() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <main className="relative w-full min-h-[115vh] overflow-x-hidden flex flex-col items-center font-sans selection:bg-white/20 selection:text-white">
-      {/* Background Video */}
-      <video
-        className="fixed inset-0 w-full h-full object-cover z-[0]"
-        autoPlay
-        muted
-        loop
-        playsInline
-        src={BG_VIDEO}
-      />
+    <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col">
+      {/* ---------------------------------------------------- */}
+      {/* HERO SECTION WITH VIDEO BACKGROUND                   */}
+      {/* ---------------------------------------------------- */}
+      <section className="relative w-full h-screen overflow-hidden bg-[#0a0a0a] flex flex-col justify-between">
+        {/* Background Video */}
+        <video
+          className="absolute inset-0 w-full h-full object-cover"
+          autoPlay
+          muted
+          loop
+          playsInline
+          src={BG_VIDEO}
+        />
 
-      {/* Dark overlay for contrast */}
-      <div className="fixed inset-0 bg-black/40 pointer-events-none z-[1]" />
+        {/* Dark overlay for contrast */}
+        <div className="absolute inset-0 bg-black/25 pointer-events-none" />
 
-      <div className="z-10 w-full max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col justify-between min-h-screen py-6">
-        <header className="relative w-full min-h-screen flex flex-col justify-between">
-          {/* Navbar */}
+        {/* Navbar */}
         <nav className="relative z-20 w-full max-w-7xl mx-auto px-6 sm:px-12 py-5 flex items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 text-white font-medium text-base">
@@ -171,7 +172,7 @@ export function HeroPage() {
             </div>
           </div>
         </div>
-      </header>
+      </section>
 
       {/* ---------------------------------------------------- */}
       {/* 01 — TRUST / STAT BAND                               */}
@@ -383,8 +384,9 @@ export function HeroPage() {
       {/* ---------------------------------------------------- */}
       {/* 05 — LIQUID GLASS FOOTER                             */}
       {/* ---------------------------------------------------- */}
-      <LiquidGlassFooter />
+      <div className="w-full max-w-7xl mx-auto px-6 sm:px-12 pb-12">
+        <LiquidGlassFooter />
       </div>
-    </main>
+    </div>
   );
 }
