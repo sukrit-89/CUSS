@@ -10,8 +10,10 @@ import {
   Link as LinkIcon,
   ShieldCheck,
 } from 'lucide-react';
+import { LiquidGlassFooter } from '@/components/LiquidGlassFooter';
 
-const BG_VIDEO = '/lv_0_20260723125159.mp4';
+const BG_VIDEO =
+  'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260429_114316_1c7889ad-2885-410e-b493-98119fee0ddb.mp4';
 
 const navLinks = [
   { label: 'Home', active: true, path: '/' },
@@ -24,25 +26,23 @@ export function HeroPage() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col">
-      {/* ---------------------------------------------------- */}
-      {/* HERO SECTION WITH VIDEO BACKGROUND                   */}
-      {/* ---------------------------------------------------- */}
-      <section className="relative w-full h-screen overflow-hidden bg-[#0a0a0a] flex flex-col justify-between">
-        {/* Background Video */}
-        <video
-          className="absolute inset-0 w-full h-full object-cover"
-          autoPlay
-          muted
-          loop
-          playsInline
-          src={BG_VIDEO}
-        />
+    <main className="relative w-full min-h-[115vh] overflow-x-hidden flex flex-col items-center font-sans selection:bg-white/20 selection:text-white">
+      {/* Background Video */}
+      <video
+        className="fixed inset-0 w-full h-full object-cover z-[0]"
+        autoPlay
+        muted
+        loop
+        playsInline
+        src={BG_VIDEO}
+      />
 
-        {/* Dark overlay for contrast */}
-        <div className="absolute inset-0 bg-black/25 pointer-events-none" />
+      {/* Dark overlay for contrast */}
+      <div className="fixed inset-0 bg-black/40 pointer-events-none z-[1]" />
 
-        {/* Navbar */}
+      <div className="z-10 w-full max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col justify-between min-h-screen py-6">
+        <header className="relative w-full min-h-screen flex flex-col justify-between">
+          {/* Navbar */}
         <nav className="relative z-20 w-full max-w-7xl mx-auto px-6 sm:px-12 py-5 flex items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 text-white font-medium text-base">
@@ -171,7 +171,7 @@ export function HeroPage() {
             </div>
           </div>
         </div>
-      </section>
+      </header>
 
       {/* ---------------------------------------------------- */}
       {/* 01 — TRUST / STAT BAND                               */}
@@ -381,41 +381,10 @@ export function HeroPage() {
       </section>
 
       {/* ---------------------------------------------------- */}
-      {/* 05 — FOOTER                                          */}
+      {/* 05 — LIQUID GLASS FOOTER                             */}
       {/* ---------------------------------------------------- */}
-      <footer className="bg-[#0a0a0a] border-t border-white/10">
-        <div className="max-w-7xl mx-auto px-6 sm:px-12 py-10 flex flex-col sm:flex-row items-center justify-between gap-4">
-          {/* Left */}
-          <div className="flex items-center gap-2">
-            <InfinityIcon size={18} strokeWidth={1.5} className="text-white/80" />
-            <span className="text-white/60 text-sm font-medium">ReRail</span>
-            <span className="text-white/30 text-xs ml-2">© 2026</span>
-          </div>
-
-          {/* Right */}
-          <div className="flex items-center gap-6 text-sm">
-            <a href="#features" className="text-white/40 hover:text-white transition-colors">
-              Docs
-            </a>
-            <a
-              href="https://github.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-white/40 hover:text-white transition-colors"
-            >
-              GitHub
-            </a>
-            <a
-              href="https://twitter.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-white/40 hover:text-white transition-colors"
-            >
-              Twitter
-            </a>
-          </div>
-        </div>
-      </footer>
-    </div>
+      <LiquidGlassFooter />
+      </div>
+    </main>
   );
 }
