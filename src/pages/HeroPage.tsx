@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { LiquidGlassFooter } from '../components/LiquidGlassFooter';
 
-const BG_VIDEO = 'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260429_114316_1c7889ad-2885-410e-b493-98119fee0ddb.mp4';
+const BG_VIDEO = '/lv_0_20260723125159.mp4';
 
 const navLinks = [
   { label: 'Home', active: true, path: '/' },
