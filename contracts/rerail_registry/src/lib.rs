@@ -84,6 +84,7 @@ pub enum Error {
     BalanceAlreadyRecorded = 11,
     ClaimAlreadyRecorded = 12,
     DeadlineNotReached = 13,
+    Overflow = 14,
 }
 
 #[contractevent]
@@ -171,7 +172,9 @@ impl ReRailRegistry {
         }
         validate_deadline(&env, deadline)?;
 
-        let campaign_id = Self::campaign_count(env.clone()) + 1;
+        let campaign_id = Self::campaign_count(env.clone())
+            .checked_add(1)
+            .ok_or(Error::Overflow)?;
         let campaign = Campaign {
             id: campaign_id,
             organizer: organizer.clone(),
@@ -221,6 +224,7 @@ impl ReRailRegistry {
         claim_token_hash: BytesN<32>,
     ) -> Result<(), Error> {
         organizer.require_auth();
+        bump_instance_ttl(&env);
         validate_amount(amount)?;
 
         let mut campaign = load_campaign(&env, campaign_id)?;
@@ -239,7 +243,10 @@ impl ReRailRegistry {
             return Err(Error::DuplicateClaimToken);
         }
 
-        campaign.recipient_count = campaign.recipient_count + 1;
+        campaign.recipient_count = campaign
+            .recipient_count
+            .checked_add(1)
+            .ok_or(Error::Overflow)?;
         let record = RecipientRecord {
             campaign_id,
             recipient: recipient.clone(),
@@ -268,6 +275,7 @@ impl ReRailRegistry {
 
     pub fn activate_campaign(env: Env, organizer: Address, campaign_id: u64) -> Result<(), Error> {
         organizer.require_auth();
+        bump_instance_ttl(&env);
         let mut campaign = load_campaign(&env, campaign_id)?;
         require_organizer(&campaign, &organizer)?;
         if campaign.status != CampaignStatus::Draft {
@@ -351,7 +359,7 @@ impl ReRailRegistry {
         }
 
         record.status = RecipientStatus::Claimed;
-        campaign.claimed_count = campaign.claimed_count + 1;
+        campaign.claimed_count = campaign.claimed_count.checked_add(1).ok_or(Error::Overflow)?;
         if campaign.claimed_count == campaign.recipient_count {
             campaign.status = CampaignStatus::Completed;
         }
@@ -377,6 +385,7 @@ impl ReRailRegistry {
 
     pub fn expire_campaign(env: Env, organizer: Address, campaign_id: u64) -> Result<(), Error> {
         organizer.require_auth();
+        bump_instance_ttl(&env);
         let mut campaign = load_campaign(&env, campaign_id)?;
         require_organizer(&campaign, &organizer)?;
         if campaign.status != CampaignStatus::Active {
@@ -458,6 +467,11 @@ fn require_organizer_or_admin(
     caller: &Address,
 ) -> Result<(), Error> {
     caller.require_auth();
+
+    // The admin lives in instance storage. Every authorised write keeps that
+    // entry alive — if instance storage archives, the admin is unrecoverable
+    // and the backend can never record a balance or a claim again.
+    bump_instance_ttl(env);
 
     if &campaign.organizer == caller {
         return Ok(());
