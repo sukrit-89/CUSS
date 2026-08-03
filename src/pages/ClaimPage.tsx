@@ -8,11 +8,42 @@ import {
   Copy,
   Check,
   ExternalLink,
+  Download,
+  Sparkles,
+  ShieldPlus,
 } from 'lucide-react';
 import { useWalletStore } from '@/stores/wallet.store';
-import { buildClaimInnerTransaction } from '@/lib/stellar';
+import {
+  buildClaimInnerTransaction,
+  buildTrustlineInnerTransaction,
+  accountExists,
+  hasTrustline,
+  fundWithFriendbot,
+} from '@/lib/stellar';
+import { USDC_ASSET } from '@/config/stellar';
 
-type ClaimState = 'loading' | 'idle' | 'signing' | 'submitting' | 'success' | 'error' | 'already-claimed' | 'expired';
+type ClaimState =
+  | 'loading'
+  | 'idle'
+  | 'signing'
+  | 'submitting'
+  | 'success'
+  | 'error'
+  | 'already-claimed'
+  | 'expired';
+
+/**
+ * Readiness of the recipient's wallet, independent of the claim transaction
+ * itself. Mirrors the 4-state machine in the PRD: no extension, no account,
+ * no trustline, ready.
+ */
+type Readiness =
+  | 'unknown'      // not connected yet
+  | 'checking'
+  | 'no-freighter'
+  | 'no-account'
+  | 'no-trustline'
+  | 'ready';
 
 interface ClaimData {
   name: string;
@@ -33,6 +64,10 @@ export function ClaimPage() {
   const [txHash, setTxHash] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [copiedTx, setCopiedTx] = useState(false);
+
+  const [readiness, setReadiness] = useState<Readiness>('unknown');
+  const [readinessBusy, setReadinessBusy] = useState(false);
+  const [readinessError, setReadinessError] = useState('');
 
   const wallet = useWalletStore();
   const checkFreighter = useWalletStore((state) => state.checkFreighter);
@@ -93,9 +128,103 @@ export function ClaimPage() {
     checkFreighter();
   }, [checkFreighter]);
 
+  // ── Wallet readiness: account exists? trustline present? ─────────────────
+  const evaluateReadiness = useCallback(async () => {
+    if (token === 'demo') {
+      setReadiness('ready');
+      return;
+    }
+
+    if (!wallet.publicKey) {
+      setReadiness(wallet.isFreighterInstalled ? 'unknown' : 'no-freighter');
+      return;
+    }
+
+    setReadiness('checking');
+    setReadinessError('');
+
+    try {
+      if (!(await accountExists(wallet.publicKey))) {
+        setReadiness('no-account');
+        return;
+      }
+
+      if (!(await hasTrustline(wallet.publicKey, USDC_ASSET))) {
+        setReadiness('no-trustline');
+        return;
+      }
+
+      setReadiness('ready');
+    } catch (err: unknown) {
+      setReadinessError(
+        err instanceof Error ? err.message : 'Could not read your account from Stellar.',
+      );
+      setReadiness('unknown');
+    }
+  }, [wallet.publicKey, wallet.isFreighterInstalled, token]);
+
+  useEffect(() => {
+    evaluateReadiness();
+  }, [evaluateReadiness]);
+
+  // ── State 2: fund the account (testnet friendbot) ────────────────────────
+  const handleFundAccount = useCallback(async () => {
+    if (!wallet.publicKey) return;
+
+    setReadinessBusy(true);
+    setReadinessError('');
+
+    try {
+      await fundWithFriendbot(wallet.publicKey);
+      await evaluateReadiness();
+    } catch (err: unknown) {
+      setReadinessError(err instanceof Error ? err.message : 'Failed to fund account.');
+    } finally {
+      setReadinessBusy(false);
+    }
+  }, [wallet.publicKey, evaluateReadiness]);
+
+  // ── State 3: add the USDC trustline, fee-bumped by ReRail ────────────────
+  const handleAddTrustline = useCallback(async () => {
+    if (!wallet.publicKey) return;
+
+    setReadinessBusy(true);
+    setReadinessError('');
+
+    try {
+      const innerTxXdr = await buildTrustlineInnerTransaction(wallet.publicKey, USDC_ASSET);
+      const signedXdr = await wallet.signTransaction(innerTxXdr);
+
+      const res = await fetch(`/api/trustline/${token}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signed_inner_tx_xdr: signedXdr }),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        throw new Error(result.error || 'Failed to add the USDC trustline.');
+      }
+
+      await evaluateReadiness();
+    } catch (err: unknown) {
+      setReadinessError(err instanceof Error ? err.message : 'Failed to add trustline.');
+    } finally {
+      setReadinessBusy(false);
+    }
+  }, [wallet, token, evaluateReadiness]);
+
   // ── Claim handler ────────────────────────────────────────────────────────
   const handleClaim = useCallback(async () => {
     if (!wallet.isConnected || !wallet.publicKey || !claimData?.balance_id) return;
+
+    // Demo mode — show informational state instead of attempting real TX
+    if (token === 'demo') {
+      setTxHash('demo_tx_00000000000000000000000000000000');
+      setClaimState('success');
+      return;
+    }
 
     try {
       setClaimState('signing');
@@ -196,8 +325,43 @@ export function ClaimPage() {
 
               <div className="border-t border-white/10 my-6" />
 
-              {/* Wallet Connection */}
-              {!wallet.isConnected ? (
+              {/* ── SETUP STATE 1: Freighter not installed ─────────────────
+                  Guide inline. Never redirect away from the claim page. */}
+              {!wallet.isFreighterInstalled && !wallet.isConnected ? (
+                <div className="flex flex-col gap-3">
+                  <div className="liquid-glass rounded-xl p-4 flex flex-col gap-3">
+                    <div className="flex items-center gap-2 text-white text-sm font-medium">
+                      <Download size={16} strokeWidth={1.5} />
+                      <span>You'll need a Stellar wallet first</span>
+                    </div>
+                    <ol className="text-white/60 text-xs flex flex-col gap-2 list-decimal list-inside">
+                      <li>
+                        Install the{' '}
+                        <a
+                          href="https://www.freighter.app/"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-white underline"
+                        >
+                          Freighter extension
+                        </a>{' '}
+                        (Chrome, Brave, or Firefox on desktop)
+                      </li>
+                      <li>Create a wallet and save your recovery phrase</li>
+                      <li>Come back to this page and press refresh below</li>
+                    </ol>
+                  </div>
+                  <button
+                    onClick={() => checkFreighter()}
+                    className="w-full bg-white text-black font-medium rounded-full px-6 py-3 text-sm hover:bg-white/90 transition-colors"
+                  >
+                    I've installed Freighter
+                  </button>
+                  <p className="text-white/30 text-xs text-center">
+                    Freighter is desktop-only. On mobile, open this link on a computer.
+                  </p>
+                </div>
+              ) : !wallet.isConnected ? (
                 <button
                   onClick={wallet.connect}
                   className="liquid-glass rounded-xl px-4 py-3 text-white text-sm font-medium flex items-center justify-center gap-2.5 hover:bg-white/5 transition-colors mb-3"
@@ -206,33 +370,98 @@ export function ClaimPage() {
                   <span>Connect Freighter Wallet</span>
                 </button>
               ) : (
-                <div className="liquid-glass rounded-xl px-4 py-3 flex items-center justify-between text-sm mb-3">
-                  <div className="flex items-center gap-2">
-                    <Wallet size={16} strokeWidth={1.5} className="text-[#22c55e]" />
-                    <span className="text-white/80 font-mono text-xs">
-                      {wallet.publicKey?.slice(0, 4)}...{wallet.publicKey?.slice(-4)}
-                    </span>
+                <>
+                  <div className="liquid-glass rounded-xl px-4 py-3 flex items-center justify-between text-sm mb-3">
+                    <div className="flex items-center gap-2">
+                      <Wallet size={16} strokeWidth={1.5} className="text-[#22c55e]" />
+                      <span className="text-white/80 font-mono text-xs">
+                        {wallet.publicKey?.slice(0, 4)}...{wallet.publicKey?.slice(-4)}
+                      </span>
+                    </div>
+                    <span className="text-xs text-[#22c55e] font-medium">Connected</span>
                   </div>
-                  <span className="text-xs text-[#22c55e] font-medium">Connected</span>
-                </div>
+
+                  {readinessError && (
+                    <div className="rounded-xl p-3 mb-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+                      {readinessError}
+                    </div>
+                  )}
+
+                  {readiness === 'checking' && (
+                    <div className="flex items-center justify-center gap-2 py-4 text-white/50 text-xs">
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Checking your account...</span>
+                    </div>
+                  )}
+
+                  {/* ── SETUP STATE 2: wallet exists, account not on-network ── */}
+                  {readiness === 'no-account' && (
+                    <div className="flex flex-col gap-3">
+                      <div className="liquid-glass rounded-xl p-4 flex flex-col gap-2">
+                        <div className="flex items-center gap-2 text-white text-sm font-medium">
+                          <Sparkles size={16} strokeWidth={1.5} />
+                          <span>Your account isn't active yet</span>
+                        </div>
+                        <p className="text-white/60 text-xs">
+                          A Stellar account has to exist on the network before it can hold
+                          anything. On testnet this is free and takes one click.
+                        </p>
+                      </div>
+                      <button
+                        onClick={handleFundAccount}
+                        disabled={readinessBusy}
+                        className="w-full bg-white text-black font-medium rounded-full px-6 py-3 text-sm hover:bg-white/90 transition-colors disabled:opacity-50"
+                      >
+                        {readinessBusy ? 'Activating...' : 'Activate my account (free)'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* ── SETUP STATE 3: account exists, no USDC trustline ────── */}
+                  {readiness === 'no-trustline' && (
+                    <div className="flex flex-col gap-3">
+                      <div className="liquid-glass rounded-xl p-4 flex flex-col gap-2">
+                        <div className="flex items-center gap-2 text-white text-sm font-medium">
+                          <ShieldPlus size={16} strokeWidth={1.5} />
+                          <span>One-time USDC setup</span>
+                        </div>
+                        <p className="text-white/60 text-xs">
+                          Stellar asks you to opt in to each asset once. Approve the
+                          signature — ReRail covers the fee, so this costs you nothing.
+                        </p>
+                      </div>
+                      <button
+                        onClick={handleAddTrustline}
+                        disabled={readinessBusy}
+                        className="w-full bg-white text-black font-medium rounded-full px-6 py-3 text-sm hover:bg-white/90 transition-colors disabled:opacity-50"
+                      >
+                        {readinessBusy ? 'Adding USDC...' : 'Enable USDC'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* ── SETUP STATE 4: ready to claim ───────────────────────── */}
+                  {readiness === 'ready' && (
+                    <>
+                      <button
+                        onClick={handleClaim}
+                        disabled={!claimData.balance_id}
+                        className={`w-full font-medium rounded-full px-6 py-3 text-sm transition-colors ${
+                          claimData.balance_id
+                            ? 'bg-white text-black hover:bg-white/90 cursor-pointer'
+                            : 'bg-white/20 text-white/40 cursor-not-allowed'
+                        }`}
+                      >
+                        {!claimData.balance_id ? 'Balance not yet created' : 'Claim USDC'}
+                      </button>
+
+                      <p className="text-white/30 text-xs text-center mt-4">
+                        No XLM required. Gas covered by ReRail.
+                      </p>
+                    </>
+                  )}
+                </>
               )}
-
-              {/* Claim Action Button */}
-              <button
-                onClick={handleClaim}
-                disabled={!wallet.isConnected || !claimData.balance_id}
-                className={`w-full font-medium rounded-full px-6 py-3 text-sm transition-colors ${
-                  wallet.isConnected && claimData.balance_id
-                    ? 'bg-white text-black hover:bg-white/90 cursor-pointer'
-                    : 'bg-white/20 text-white/40 cursor-not-allowed'
-                }`}
-              >
-                {!claimData.balance_id ? 'Balance not yet created' : 'Claim USDC'}
-              </button>
-
-              <p className="text-white/30 text-xs text-center mt-4">
-                No XLM required. Gas covered by ReRail.
-              </p>
             </>
           )}
 

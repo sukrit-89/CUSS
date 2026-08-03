@@ -1,1 +1,0 @@
-export default function WalletConnect() { return <div>WalletConnect</div>; }

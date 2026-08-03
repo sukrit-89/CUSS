@@ -1,12 +1,20 @@
-import { Operation, Asset } from '@stellar/stellar-sdk';
+import { Operation, Asset, TransactionBuilder, xdr } from '@stellar/stellar-sdk';
 import { getHorizonServer } from '@/lib/stellar/client';
+import {
+  BASE_FEE,
+  NETWORK_PASSPHRASE,
+  TX_TIMEOUT_SECONDS,
+} from '@/config/constants';
 
 /**
  * Builds a changeTrust operation.
  * @param asset The asset to trust.
  * @param source Optional source account override.
  */
-export function buildChangeTrustOp(asset: Asset, source?: string): Operation {
+export function buildChangeTrustOp(
+  asset: Asset,
+  source?: string,
+): xdr.Operation<Operation.ChangeTrust> {
   return Operation.changeTrust({
     asset,
     source,
@@ -28,4 +36,28 @@ export async function hasTrustline(publicKey: string, asset: Asset): Promise<boo
     }
     return false;
   });
+}
+
+/**
+ * Builds the unsigned inner transaction a recipient signs to open a trustline.
+ * The recipient pays nothing — /api/trustline/[token]/execute fee-bumps it.
+ *
+ * @param recipientPublicKey The recipient adding the trustline.
+ * @param asset The asset to trust.
+ */
+export async function buildTrustlineInnerTransaction(
+  recipientPublicKey: string,
+  asset: Asset,
+): Promise<string> {
+  const server = getHorizonServer();
+  const recipientAccount = await server.loadAccount(recipientPublicKey);
+
+  return new TransactionBuilder(recipientAccount, {
+    fee: BASE_FEE,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(buildChangeTrustOp(asset))
+    .setTimeout(TX_TIMEOUT_SECONDS)
+    .build()
+    .toXDR();
 }

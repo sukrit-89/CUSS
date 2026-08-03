@@ -26,25 +26,17 @@ export {
 export {
   loadAccount,
   accountExists,
+  fundWithFriendbot,
   buildSponsoredAccountOps,
 } from './account';
 
 export {
   buildChangeTrustOp,
+  buildTrustlineInnerTransaction,
   hasTrustline,
 } from './trustline';
 
-export {
-  buildCreateRegistryCampaignTx,
-  buildRegisterRegistryRecipientTx,
-  buildActivateRegistryCampaignTx,
-  buildMarkRegistryBalanceCreatedTx,
-  buildRecordRegistryClaimTx,
-  type RegistryCampaignInput,
-  type RegistryRecipientInput,
-  type RegistryRecipientBalanceInput,
-  type RegistryClaimInput,
-} from './registry-contract';
+
 
 export type {
   StellarNetwork,

@@ -1,1 +1,0 @@
-export default function ClaimStatus() { return <div>ClaimStatus</div>; }

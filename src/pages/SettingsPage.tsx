@@ -1,18 +1,21 @@
 import { useState } from 'react';
 import { Sidebar } from '../components/Sidebar';
-import { Building, Key, Users, RefreshCw, Check, Upload } from 'lucide-react';
+import { Building, Key, Users, Check, Upload } from 'lucide-react';
+import { useAuthStore } from '@/stores/auth.store';
 
 export function SettingsPage() {
-  const [apiKey, setApiKey] = useState('rr_live_948f2a10c...3819e4');
-  const [copiedKey, setCopiedKey] = useState(false);
-  const [orgName, setOrgName] = useState('Acme Crypto Org');
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const auth = useAuthStore();
+  const userEmail = auth.user?.email ?? 'unknown@rerail.app';
+  const userName = auth.user?.user_metadata?.full_name ?? userEmail.split('@')[0];
 
-  const teamMembers = [
-    { email: 'alex@acme.com', role: 'Owner' },
-    { email: 'sarah@acme.com', role: 'Admin' },
-    { email: 'dev@acme.com', role: 'Developer' },
-  ];
+  const [orgName, setOrgName] = useState(userName);
+  const [logoUrl, setLogoUrl] = useState<string | null>(
+    auth.user?.user_metadata?.avatar_url ?? null,
+  );
+
+  // API key — not yet implemented, shown as placeholder
+  const [apiKey] = useState('Coming soon — API access is in development');
+  const [copiedKey, setCopiedKey] = useState(false);
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -22,13 +25,8 @@ export function SettingsPage() {
     }
   };
 
-  const handleRegenerateKey = () => {
-    const newKey = `rr_live_${Math.random().toString(36).substring(2, 12)}...${Math.random().toString(36).substring(2, 8)}`;
-    setApiKey(newKey);
-  };
-
   const handleCopyKey = () => {
-    navigator.clipboard.writeText('rr_live_948f2a10c71948328103819e4');
+    navigator.clipboard.writeText(auth.user?.id ?? '');
     setCopiedKey(true);
     setTimeout(() => setCopiedKey(false), 2000);
   };
@@ -87,17 +85,17 @@ export function SettingsPage() {
               <span>Team Members</span>
             </h2>
             <div className="liquid-glass rounded-2xl p-6 flex flex-col gap-3">
-              {teamMembers.map((member) => (
-                <div
-                  key={member.email}
-                  className="flex items-center justify-between py-2 border-b border-white/5 last:border-none"
-                >
-                  <span className="text-white/80 text-sm">{member.email}</span>
-                  <span className="liquid-glass rounded-full px-3 py-1 text-xs text-white/60 font-medium">
-                    {member.role}
-                  </span>
-                </div>
-              ))}
+              <div className="flex items-center justify-between py-2">
+                <span className="text-white/80 text-sm">{userEmail}</span>
+                <span className="liquid-glass rounded-full px-3 py-1 text-xs text-white/60 font-medium">
+                  Owner
+                </span>
+              </div>
+              <div className="border-t border-white/5 pt-3">
+                <p className="text-white/30 text-xs">
+                  Team collaboration is coming in L6. You'll be able to invite admins and developers.
+                </p>
+              </div>
             </div>
           </div>
 
@@ -109,12 +107,12 @@ export function SettingsPage() {
             </h2>
             <div className="liquid-glass rounded-2xl p-6 flex flex-col gap-4">
               <div>
-                <label className="text-white/50 text-xs block mb-1.5 font-medium">Secret API Key</label>
+                <label className="text-white/50 text-xs block mb-1.5 font-medium">Your User ID</label>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
                     readOnly
-                    value={apiKey}
+                    value={auth.user?.id ?? '—'}
                     className="flex-1 liquid-glass rounded-xl px-4 py-2.5 text-white/80 text-sm font-mono outline-none"
                   />
                   <button
@@ -127,14 +125,7 @@ export function SettingsPage() {
               </div>
 
               <div className="flex items-center justify-between pt-2">
-                <span className="text-white/40 text-xs">Used for programmatic claim link generation</span>
-                <button
-                  onClick={handleRegenerateKey}
-                  className="text-white/50 hover:text-white text-xs flex items-center gap-1 transition-colors"
-                >
-                  <RefreshCw size={12} />
-                  <span>Regenerate Key</span>
-                </button>
+                <span className="text-white/40 text-xs">{apiKey}</span>
               </div>
             </div>
           </div>
@@ -143,3 +134,4 @@ export function SettingsPage() {
     </div>
   );
 }
+

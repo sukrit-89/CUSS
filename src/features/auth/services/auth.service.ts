@@ -33,10 +33,17 @@ export class AuthService {
    * Gets the currently authenticated user.
    */
   static async getCurrentUser(): Promise<User | null> {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) {
+      return null;
+    }
+
     const { data, error } = await supabase.auth.getUser();
 
     if (error) {
-      console.error('Error fetching current user:', error.message);
+      if (!error.message.includes('Auth session missing')) {
+        console.error('Error fetching current user:', error.message);
+      }
       return null;
     }
 

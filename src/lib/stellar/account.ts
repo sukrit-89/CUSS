@@ -28,6 +28,25 @@ export async function accountExists(publicKey: string): Promise<boolean> {
 }
 
 /**
+ * Funds an account with the testnet friendbot.
+ *
+ * Testnet-only convenience for claim-page state 2 — on pubnet the recipient
+ * has to fund the account themselves.
+ */
+export async function fundWithFriendbot(publicKey: string): Promise<void> {
+  const response = await fetch(
+    `https://friendbot.stellar.org?addr=${encodeURIComponent(publicKey)}`,
+  );
+
+  if (!response.ok) {
+    // Friendbot 400s when the account already exists, which is not a failure
+    // from the caller's point of view.
+    if (await accountExists(publicKey)) return;
+    throw new Error('Friendbot could not fund this account. Try again shortly.');
+  }
+}
+
+/**
  * Builds operation array for sponsored account + USDC trustline creation.
  * @param sponsorPublicKey The sponsor's public key.
  * @param newAccountPublicKey The new account's public key.

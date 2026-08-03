@@ -23,11 +23,15 @@ import {
   downloadCSV,
 } from '@/features/campaigns/utils/csv-export';
 import { CampaignActivationService } from '@/features/campaigns/services/campaign-activation.service';
+import { getRecipientsByCampaign } from '@/lib/supabase/queries/recipients';
 import { getHorizonServer } from '@/lib/stellar';
-import { USDC_ISSUER, CLAIM_LINK_BASE_URL } from '@/config/constants';
-import { CONTRACTS_ENABLED } from '@/config/contracts';
+import {
+  USDC_ISSUER,
+  CLAIM_LINK_BASE_URL,
+  NETWORK_PASSPHRASE,
+  DEFAULT_CLAIM_EXPIRY_SECONDS,
+} from '@/config/constants';
 import { Transaction } from '@stellar/stellar-sdk';
-import { NETWORK_PASSPHRASE } from '@/config/constants';
 
 interface ParsedRecipient {
   id: string;
@@ -38,7 +42,26 @@ interface ParsedRecipient {
 }
 
 type WizardStep = 1 | 2;
-type GenerationState = 'idle' | 'creating' | 'activating' | 'signing' | 'submitting' | 'done' | 'error';
+type GenerationState =
+  | 'idle'
+  | 'creating'
+  | 'activating'
+  | 'signing'
+  | 'submitting'
+  | 'syncing'
+  | 'done'
+  | 'error';
+
+/** `datetime-local` wants `YYYY-MM-DDTHH:mm` in local time, not an ISO string. */
+function toDateTimeLocal(date: Date): string {
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+/** Default deadline: DEFAULT_CLAIM_EXPIRY_SECONDS (7 days) from now. */
+const defaultDeadlineValue = toDateTimeLocal(
+  new Date(Date.now() + DEFAULT_CLAIM_EXPIRY_SECONDS * 1000),
+);
 
 export function NewPayoutPage() {
   const navigate = useNavigate();
@@ -53,6 +76,7 @@ export function NewPayoutPage() {
   // Campaign fields
   const [campaignName, setCampaignName] = useState('');
   const [defaultAmount, setDefaultAmount] = useState('');
+  const [deadline, setDeadline] = useState(defaultDeadlineValue);
 
   // Parsed recipients
   const [parsedRecipients, setParsedRecipients] = useState<ParsedRecipient[]>([]);
@@ -63,6 +87,11 @@ export function NewPayoutPage() {
   const [genError, setGenError] = useState('');
   const [createdCampaignId, setCreatedCampaignId] = useState<string | null>(null);
   const [copiedAll, setCopiedAll] = useState(false);
+
+  // Real recipients from Supabase (with actual claim_link_token UUIDs)
+  const [createdRecipients, setCreatedRecipients] = useState<
+    Array<{ id: string; name: string; email: string | null; wallet_address: string | null; amount: string | null; claim_link_token: string; status: string }>
+  >([]);
 
   const campaignStore = useCampaignStore();
   const wallet = useWalletStore();
@@ -143,6 +172,17 @@ export function NewPayoutPage() {
   const handleGenerateClaimLinks = useCallback(async () => {
     if (!auth.user || parsedRecipients.length === 0) return;
 
+    const deadlineDate = new Date(deadline);
+
+    if (isNaN(deadlineDate.getTime()) || deadlineDate.getTime() <= Date.now()) {
+      setGenError('Pick a claim deadline in the future.');
+      setGenState('error');
+      return;
+    }
+
+    // The claimable balance predicates take a duration, not a timestamp.
+    const deadlineSeconds = Math.floor((deadlineDate.getTime() - Date.now()) / 1000);
+
     try {
       // Step 1: Create campaign in Supabase
       setGenState('creating');
@@ -153,6 +193,8 @@ export function NewPayoutPage() {
         issuer: USDC_ISSUER,
         amount_per_recipient: defaultAmount || '0',
         total_pool: totalDistribution.toString(),
+        deadline: deadlineDate.toISOString(),
+        treasury_address: wallet.publicKey ?? null,
         status: 'draft',
       });
       setCreatedCampaignId(campaign.id);
@@ -164,70 +206,116 @@ export function NewPayoutPage() {
         { type: 'text/csv' },
       ));
 
-      // Step 3: Build claimable balance transactions if wallet connected
-      if (wallet.isConnected && wallet.publicKey) {
-        setGenState('activating');
+      // Step 2b: Fetch real recipients with Supabase-generated claim_link_tokens
+      const dbRecipients = await getRecipientsByCampaign(campaign.id);
+      setCreatedRecipients(dbRecipients.map((r) => ({
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        wallet_address: r.wallet_address,
+        amount: r.amount,
+        claim_link_token: r.claim_link_token,
+        status: r.status,
+      })));
 
-        try {
-          const draft = await CampaignActivationService.buildActivationTransactions({
-            campaignId: campaign.id,
-            organizerPublicKey: wallet.publicKey,
-          });
-
-          if (draft.unsignedTransactionXdrs.length > 0) {
-            setGenState('signing');
-
-            const server = getHorizonServer();
-
-            for (const txXdr of draft.unsignedTransactionXdrs) {
-              const signedXdr = await wallet.signTransaction(txXdr);
-
-              setGenState('submitting');
-
-              const tx = new Transaction(signedXdr, NETWORK_PASSPHRASE);
-              const result = await server.submitTransaction(tx);
-
-              if (result.successful) {
-                // Mark campaign as active
-                await CampaignActivationService.markCampaignActive(campaign.id);
-              }
-            }
-          }
-        } catch (stellarError) {
-          // Non-fatal: campaign created, recipients inserted, but on-chain tx failed
-          console.warn('Stellar activation skipped or failed:', stellarError);
-        }
+      // Step 3: Lock funds on-chain. A failure here is fatal to the flow —
+      // without claimable balances the claim links resolve to nothing, so the
+      // organizer must see the error rather than a false success.
+      if (!wallet.isConnected || !wallet.publicKey) {
+        throw new Error(
+          'Connect your Stellar wallet before generating claim links — the payout must be funded on-chain.',
+        );
       }
+
+      setGenState('activating');
+
+      const draft = await CampaignActivationService.buildActivationTransactions({
+        campaignId: campaign.id,
+        organizerPublicKey: wallet.publicKey,
+        deadlineSeconds,
+      });
+
+      const server = getHorizonServer();
+      let totalSynced = 0;
+
+      for (const txXdr of draft.unsignedTransactionXdrs) {
+        setGenState('signing');
+        const signedXdr = await wallet.signTransaction(txXdr);
+
+        setGenState('submitting');
+        const tx = new Transaction(signedXdr, NETWORK_PASSPHRASE);
+        const result = await server.submitTransaction(tx);
+
+        if (!result.successful) {
+          throw new Error(`Stellar rejected the funding transaction (${result.hash}).`);
+        }
+
+        // Step 4: Balance IDs only exist in Horizon's effects. Without this the
+        // recipients' claimable_balance_id stays NULL and nobody can claim.
+        setGenState('syncing');
+        const syncRes = await fetch(
+          `/api/campaign/sync?txHash=${result.hash}&campaignId=${campaign.id}`,
+          { method: 'POST' },
+        );
+        const syncData = await syncRes.json();
+
+        if (!syncRes.ok) {
+          throw new Error(
+            syncData.error || 'Funds were locked on-chain but claim links could not be linked to them.',
+          );
+        }
+
+        totalSynced += syncData.synced ?? 0;
+      }
+
+      if (totalSynced === 0) {
+        throw new Error('No claimable balances could be matched to recipients.');
+      }
+
+      // Step 5: One status flip, after every batch has landed.
+      await CampaignActivationService.markCampaignActive(campaign.id);
+
+      // Refresh so the exported CSV carries the real on-chain state.
+      const syncedRecipients = await getRecipientsByCampaign(campaign.id);
+      setCreatedRecipients(syncedRecipients.map((r) => ({
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        wallet_address: r.wallet_address,
+        amount: r.amount,
+        claim_link_token: r.claim_link_token,
+        status: r.status,
+      })));
 
       setGenState('done');
     } catch (err: unknown) {
       setGenError(err instanceof Error ? err.message : 'Failed to generate claim links.');
       setGenState('error');
     }
-  }, [auth.user, parsedRecipients, campaignName, defaultAmount, totalDistribution, campaignStore, wallet]);
+  }, [auth.user, parsedRecipients, campaignName, defaultAmount, deadline, totalDistribution, campaignStore, wallet]);
 
-  // ── Copy all links ──────────────────────────────────────────────────────
+  // ── Copy all links (uses real Supabase claim_link_tokens) ───────────────
   const handleCopyAllLinks = () => {
-    const links = parsedRecipients
-      .map((r) => `${CLAIM_LINK_BASE_URL}/claim/${r.id}`)
+    const links = createdRecipients
+      .map((r) => `${CLAIM_LINK_BASE_URL}/claim/${r.claim_link_token}`)
       .join('\n');
     navigator.clipboard.writeText(links);
     setCopiedAll(true);
     setTimeout(() => setCopiedAll(false), 2000);
   };
 
-  // ── CSV Export ──────────────────────────────────────────────────────────
+  // ── CSV Export (uses real Supabase claim_link_tokens) ───────────────────
   const handleExportCSV = () => {
-    // Build a minimal Recipient array for the export utility
-    const exportData = parsedRecipients.map((r) => ({
+    // Build a minimal Recipient array from real DB records
+    const exportData = createdRecipients.map((r) => ({
       id: r.id,
       campaign_id: createdCampaignId || '',
       name: r.name,
-      email: r.email ?? null,
-      wallet_address: r.wallet_address ?? null,
+      email: r.email,
+      wallet_address: r.wallet_address,
       amount: r.amount ?? defaultAmount ?? null,
       claimable_balance_id: null,
-      claim_link_token: r.id,
+      claim_link_token: r.claim_link_token,
       status: 'pending' as const,
       claim_token_hash: null,
       registry_status: null,
@@ -246,6 +334,7 @@ export function NewPayoutPage() {
     activating: 'Building on-chain transactions...',
     signing: 'Waiting for wallet signature...',
     submitting: 'Submitting to Stellar network...',
+    syncing: 'Linking claim links to on-chain balances...',
     done: '',
     error: '',
   };
@@ -307,6 +396,24 @@ export function NewPayoutPage() {
                     className="w-full liquid-glass rounded-xl px-4 py-2.5 text-white text-sm placeholder:text-white/40 outline-none focus:ring-1 focus:ring-white/20"
                   />
                 </div>
+              </div>
+
+              {/* Claim Deadline */}
+              <div>
+                <label className="text-white/50 text-xs block mb-1.5 font-medium">
+                  Claim Deadline
+                </label>
+                <input
+                  type="datetime-local"
+                  value={deadline}
+                  min={toDateTimeLocal(new Date())}
+                  onChange={(e) => setDeadline(e.target.value)}
+                  className="w-full liquid-glass rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:ring-1 focus:ring-white/20 [color-scheme:dark]"
+                />
+                <p className="text-white/30 text-xs mt-1.5">
+                  Recipients can claim until this time. After it passes, you can reclaim
+                  anything unclaimed — enforced by Stellar, not by ReRail.
+                </p>
               </div>
 
               {/* Wallet Connection Status */}
@@ -541,11 +648,6 @@ export function NewPayoutPage() {
                     <p className="text-white/60 text-sm">
                       {parsedRecipients.length} gasless payout links are now active and ready for distribution.
                     </p>
-                    {CONTRACTS_ENABLED && (
-                      <p className="text-white/40 text-xs mt-1">
-                        Campaign registered on-chain via Soroban registry
-                      </p>
-                    )}
                   </div>
 
                   <div className="flex flex-wrap gap-3 mt-4">

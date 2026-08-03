@@ -9,9 +9,11 @@
 
 export const STELLAR_NETWORK = 'TESTNET' as const;
 
-export const NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
+export const NETWORK_PASSPHRASE =
+  import.meta.env.VITE_NETWORK_PASSPHRASE ?? 'Test SDF Network ; September 2015';
 
-export const HORIZON_URL = 'https://horizon-testnet.stellar.org';
+export const HORIZON_URL =
+  import.meta.env.VITE_HORIZON_URL ?? 'https://horizon-testnet.stellar.org';
 
 // ── USDC Asset (Testnet) ─────────────────────────────────────────────────────
 
@@ -58,6 +60,8 @@ export type CampaignStatusValue =
 
 export const RECIPIENT_STATUS = {
   PENDING: 'pending',
+  /** Transient lock held by /api/claim/[token]/execute while a fee bump is in flight */
+  CLAIMING: 'claiming',
   CLAIMED: 'claimed',
   EXPIRED: 'expired',
 } as const;

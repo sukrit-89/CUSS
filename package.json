@@ -8,9 +8,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview",
-    "contracts:test": "cargo test --manifest-path contracts/Cargo.toml",
-    "contracts:build": "stellar contract build --manifest-path contracts/Cargo.toml"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@stellar/freighter-api": "^6.0.1",

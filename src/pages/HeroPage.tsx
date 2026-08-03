@@ -10,9 +10,8 @@ import {
   Link as LinkIcon,
   ShieldCheck,
 } from 'lucide-react';
-import { LiquidGlassFooter } from '../components/LiquidGlassFooter';
 
-const BG_VIDEO = 'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260429_114316_1c7889ad-2885-410e-b493-98119fee0ddb.mp4';
+const BG_VIDEO = '/lv_0_20260723125159.mp4';
 
 const navLinks = [
   { label: 'Home', active: true, path: '/' },
@@ -382,11 +381,41 @@ export function HeroPage() {
       </section>
 
       {/* ---------------------------------------------------- */}
-      {/* 05 — LIQUID GLASS FOOTER                             */}
+      {/* 05 — FOOTER                                          */}
       {/* ---------------------------------------------------- */}
-      <div className="w-full max-w-7xl mx-auto px-6 sm:px-12 pb-12">
-        <LiquidGlassFooter />
-      </div>
+      <footer className="bg-[#0a0a0a] border-t border-white/10">
+        <div className="max-w-7xl mx-auto px-6 sm:px-12 py-10 flex flex-col sm:flex-row items-center justify-between gap-4">
+          {/* Left */}
+          <div className="flex items-center gap-2">
+            <InfinityIcon size={18} strokeWidth={1.5} className="text-white/80" />
+            <span className="text-white/60 text-sm font-medium">ReRail</span>
+            <span className="text-white/30 text-xs ml-2">© 2026</span>
+          </div>
+
+          {/* Right */}
+          <div className="flex items-center gap-6 text-sm">
+            <a href="#features" className="text-white/40 hover:text-white transition-colors">
+              Docs
+            </a>
+            <a
+              href="https://github.com/sukrit-89/CUSS"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-white/40 hover:text-white transition-colors"
+            >
+              GitHub
+            </a>
+            <a
+              href="https://x.com/rerail_xyz"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-white/40 hover:text-white transition-colors"
+            >
+              Twitter
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

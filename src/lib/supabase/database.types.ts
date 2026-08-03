@@ -70,7 +70,7 @@ export interface Database {
           claim_token_hash: string | null;
           registry_status: 'pending' | 'funded' | 'claimed' | 'expired' | null;
           registry_tx_hash: string | null;
-          status: 'pending' | 'claimed' | 'expired';
+          status: 'pending' | 'claiming' | 'claimed' | 'expired';
           claimed_at: string | null;
           created_at: string;
         };
@@ -86,7 +86,7 @@ export interface Database {
           claim_token_hash?: string | null;
           registry_status?: 'pending' | 'funded' | 'claimed' | 'expired' | null;
           registry_tx_hash?: string | null;
-          status?: 'pending' | 'claimed' | 'expired';
+          status?: 'pending' | 'claiming' | 'claimed' | 'expired';
           claimed_at?: string | null;
           created_at?: string;
         };
@@ -102,7 +102,7 @@ export interface Database {
           claim_token_hash?: string | null;
           registry_status?: 'pending' | 'funded' | 'claimed' | 'expired' | null;
           registry_tx_hash?: string | null;
-          status?: 'pending' | 'claimed' | 'expired';
+          status?: 'pending' | 'claiming' | 'claimed' | 'expired';
           claimed_at?: string | null;
           created_at?: string;
         };
