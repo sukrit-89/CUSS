@@ -23,6 +23,7 @@ import {
   downloadCSV,
 } from '@/features/campaigns/utils/csv-export';
 import { CampaignActivationService } from '@/features/campaigns/services/campaign-activation.service';
+import { RegistryService } from '@/features/campaigns/services/registry.service';
 import { getRecipientsByCampaign } from '@/lib/supabase/queries/recipients';
 import { getHorizonServer } from '@/lib/stellar';
 import {
@@ -45,6 +46,7 @@ type WizardStep = 1 | 2;
 type GenerationState =
   | 'idle'
   | 'creating'
+  | 'registering'
   | 'activating'
   | 'signing'
   | 'submitting'
@@ -87,6 +89,8 @@ export function NewPayoutPage() {
   const [genError, setGenError] = useState('');
   const [createdCampaignId, setCreatedCampaignId] = useState<string | null>(null);
   const [copiedAll, setCopiedAll] = useState(false);
+  const [registryProgress, setRegistryProgress] = useState('');
+  const [registryWarning, setRegistryWarning] = useState('');
 
   // Real recipients from Supabase (with actual claim_link_token UUIDs)
   const [createdRecipients, setCreatedRecipients] = useState<
@@ -227,6 +231,33 @@ export function NewPayoutPage() {
         );
       }
 
+      // Step 3a: Mirror onto the Soroban registry. Best effort by design —
+      // the registry is a proof layer, so a contract failure downgrades the
+      // campaign to "not yet on chain" rather than failing the payout.
+      if (RegistryService.isEnabled) {
+        setGenState('registering');
+        try {
+          await RegistryService.mirrorCampaign({
+            campaignId: campaign.id,
+            organizerPublicKey: wallet.publicKey,
+            name: campaign.name,
+            defaultAmount: defaultAmount || '0',
+            totalPool: totalDistribution.toString(),
+            deadline: deadlineDate,
+            recipients: dbRecipients,
+            signTransaction: wallet.signTransaction,
+            onProgress: setRegistryProgress,
+          });
+        } catch (registryError) {
+          console.warn('Registry mirror skipped:', registryError);
+          setRegistryWarning(
+            'Payout is live, but it could not be recorded on the Soroban registry.',
+          );
+        } finally {
+          setRegistryProgress('');
+        }
+      }
+
       setGenState('activating');
 
       const draft = await CampaignActivationService.buildActivationTransactions({
@@ -331,6 +362,7 @@ export function NewPayoutPage() {
   const genStateLabel: Record<GenerationState, string> = {
     idle: '',
     creating: 'Creating campaign...',
+    registering: registryProgress || 'Recording campaign on the Soroban registry...',
     activating: 'Building on-chain transactions...',
     signing: 'Waiting for wallet signature...',
     submitting: 'Submitting to Stellar network...',
@@ -649,6 +681,13 @@ export function NewPayoutPage() {
                       {parsedRecipients.length} gasless payout links are now active and ready for distribution.
                     </p>
                   </div>
+
+                  {registryWarning && (
+                    <div className="w-full rounded-xl p-3 bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs text-left">
+                      {registryWarning} Funds are locked on-chain and every link works —
+                      only the registry mirror is missing.
+                    </div>
+                  )}
 
                   <div className="flex flex-wrap gap-3 mt-4">
                     <button

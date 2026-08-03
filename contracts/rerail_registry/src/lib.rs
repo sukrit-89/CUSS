@@ -278,16 +278,20 @@ impl ReRailRegistry {
         Ok(())
     }
 
+    /// Records the claimable balance created for a recipient.
+    ///
+    /// Callable by the organizer or the registry admin — ReRail's backend
+    /// resolves balance IDs from Horizon effects after the organizer has
+    /// already signed and submitted the funding transaction.
     pub fn mark_balance_created(
         env: Env,
-        organizer: Address,
+        caller: Address,
         campaign_id: u64,
         recipient: Address,
         balance_id: BytesN<32>,
     ) -> Result<(), Error> {
-        organizer.require_auth();
         let campaign = load_campaign(&env, campaign_id)?;
-        require_organizer(&campaign, &organizer)?;
+        require_organizer_or_admin(&env, &campaign, &caller)?;
         if campaign.status != CampaignStatus::Active {
             return Err(Error::InvalidStatus);
         }
@@ -319,16 +323,19 @@ impl ReRailRegistry {
         Ok(())
     }
 
+    /// Records that a recipient claimed their balance.
+    ///
+    /// Callable by the organizer or the registry admin — the claim is executed
+    /// server-side inside the fee-bump route, where the organizer cannot sign.
     pub fn record_claim(
         env: Env,
-        organizer: Address,
+        caller: Address,
         campaign_id: u64,
         recipient: Address,
         tx_hash: BytesN<32>,
     ) -> Result<(), Error> {
-        organizer.require_auth();
         let mut campaign = load_campaign(&env, campaign_id)?;
-        require_organizer(&campaign, &organizer)?;
+        require_organizer_or_admin(&env, &campaign, &caller)?;
         if campaign.status != CampaignStatus::Active {
             return Err(Error::InvalidStatus);
         }
@@ -436,6 +443,37 @@ fn require_organizer(campaign: &Campaign, organizer: &Address) -> Result<(), Err
         return Err(Error::NotOrganizer);
     }
     Ok(())
+}
+
+/// Authorises a bookkeeping call from either the campaign's organizer or the
+/// registry admin.
+///
+/// Balance creation and claim execution are observed by ReRail's backend, not
+/// by the organizer's browser — the organizer is not present to sign at that
+/// moment. Both functions only record what already happened on the Stellar
+/// ledger, so admin recording cannot move funds or alter who may claim.
+fn require_organizer_or_admin(
+    env: &Env,
+    campaign: &Campaign,
+    caller: &Address,
+) -> Result<(), Error> {
+    caller.require_auth();
+
+    if &campaign.organizer == caller {
+        return Ok(());
+    }
+
+    let admin: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .ok_or(Error::NotInitialized)?;
+
+    if &admin == caller {
+        return Ok(());
+    }
+
+    Err(Error::NotOrganizer)
 }
 
 fn load_campaign(env: &Env, campaign_id: u64) -> Result<Campaign, Error> {

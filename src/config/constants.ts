@@ -15,6 +15,10 @@ export const NETWORK_PASSPHRASE =
 export const HORIZON_URL =
   import.meta.env.VITE_HORIZON_URL ?? 'https://horizon-testnet.stellar.org';
 
+/** Soroban RPC — contract invocations cannot go through Horizon */
+export const SOROBAN_RPC_URL =
+  import.meta.env.VITE_SOROBAN_RPC_URL ?? 'https://soroban-testnet.stellar.org';
+
 // ── USDC Asset (Testnet) ─────────────────────────────────────────────────────
 
 export const USDC_ASSET_CODE = 'USDC';
@@ -29,6 +33,13 @@ export const BASE_FEE = '100';
 
 /** Fee bump multiplier — 10× base gives comfortable headroom */
 export const FEE_BUMP_MULTIPLIER = 10;
+
+/**
+ * Inclusion fee for Soroban contract invocations, in stroops.
+ * Simulation attaches the resource fee on top of this; BASE_FEE alone is too
+ * low to get a contract call included.
+ */
+export const SOROBAN_INCLUSION_FEE = '1000000';
 
 /** Transaction timeout in seconds */
 export const TX_TIMEOUT_SECONDS = 30;

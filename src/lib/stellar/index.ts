@@ -36,6 +36,21 @@ export {
   hasTrustline,
 } from './trustline';
 
+export {
+  getSorobanServer,
+  submitRegistryTx,
+  balanceIdToHash,
+  buildCreateRegistryCampaignTx,
+  buildRegisterRegistryRecipientTx,
+  buildActivateRegistryCampaignTx,
+  buildMarkRegistryBalanceCreatedTx,
+  buildRecordRegistryClaimTx,
+  type RegistryCampaignInput,
+  type RegistryRecipientInput,
+  type RegistryRecipientBalanceInput,
+  type RegistryClaimInput,
+} from './registry-contract';
+
 
 
 export type {

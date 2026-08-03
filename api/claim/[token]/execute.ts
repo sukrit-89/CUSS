@@ -6,6 +6,7 @@ import {
   StrKey,
   TransactionBuilder,
 } from '@stellar/stellar-sdk';
+import { isRegistryConfigured, recordClaim } from '../../_lib/registry';
 
 const UUID_V4_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -175,10 +176,41 @@ export default async function handler(req: any, res: any) {
           stellar_response: submitResult,
         });
 
+      // ── Mirror the claim onto the Soroban registry, best effort ──────────
+      // The USDC has already moved; the registry only records that it did.
+      // A contract failure must never turn a successful claim into an error.
+      let registryTxHash: string | null = null;
+
+      if (isRegistryConfigured()) {
+        try {
+          const { data: campaignRow } = await supabase
+            .from('campaigns')
+            .select('registry_campaign_id')
+            .eq('id', recipient.campaign_id)
+            .single();
+
+          if (campaignRow?.registry_campaign_id) {
+            registryTxHash = await recordClaim(
+              campaignRow.registry_campaign_id,
+              recipient.wallet_address,
+              submitResult.hash
+            );
+
+            await supabase
+              .from('recipients')
+              .update({ registry_status: 'claimed', registry_tx_hash: registryTxHash })
+              .eq('id', recipient.id);
+          }
+        } catch (registryError: any) {
+          console.warn('Registry record_claim failed:', registryError?.message);
+        }
+      }
+
       return res.status(200).json({
         success: true,
         hash: submitResult.hash,
         tx_hash: submitResult.hash,
+        registry_tx_hash: registryTxHash,
       });
     } else {
       await releaseClaim(supabase, lockedRecipientId);

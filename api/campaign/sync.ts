@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { isRegistryConfigured, recordBalanceCreated } from '../_lib/registry';
 
 const TX_HASH_RE = /^[0-9a-f]{64}$/i;
 const UUID_RE =
@@ -60,7 +61,7 @@ export default async function handler(req: any, res: any) {
   try {
     const { data: campaign, error: campaignError } = await supabase
       .from('campaigns')
-      .select('id, treasury_address')
+      .select('id, treasury_address, registry_campaign_id')
       .eq('id', campaignId)
       .single();
 
@@ -75,8 +76,12 @@ export default async function handler(req: any, res: any) {
       return res.status(404).json({ error: 'Transaction not found on Horizon' });
     }
 
-    const transaction = await txResponse.json();
-    const organizerAddress: string = transaction.source_account;
+    const transaction = (await txResponse.json()) as { source_account?: string };
+    const organizerAddress = transaction.source_account;
+
+    if (!organizerAddress) {
+      return res.status(502).json({ error: 'Horizon returned a transaction with no source' });
+    }
 
     // The organizer is the only account allowed to fund a campaign's balances.
     // If we already know the treasury, a mismatch means this txHash belongs to
@@ -96,7 +101,9 @@ export default async function handler(req: any, res: any) {
       return res.status(502).json({ error: 'Failed to load transaction effects' });
     }
 
-    const effectsPayload = await effectsResponse.json();
+    const effectsPayload = (await effectsResponse.json()) as {
+      _embedded?: { records?: ClaimantEffect[] };
+    };
     const effects: ClaimantEffect[] = effectsPayload?._embedded?.records ?? [];
 
     // Each balance has two claimants: the recipient and the organizer's
@@ -156,10 +163,40 @@ export default async function handler(req: any, res: any) {
         .eq('id', campaignId);
     }
 
+    // ── Mirror onto the Soroban registry, best effort ───────────────────────
+    // The registry is a proof layer. A failure here must not fail the sync —
+    // the balances exist on-chain either way and the links already work.
+    let registrySynced = 0;
+
+    if (isRegistryConfigured() && campaign.registry_campaign_id) {
+      for (const entry of synced) {
+        try {
+          const registryTxHash = await recordBalanceCreated(
+            campaign.registry_campaign_id,
+            entry.wallet_address,
+            entry.balance_id
+          );
+
+          await supabase
+            .from('recipients')
+            .update({ registry_status: 'funded', registry_tx_hash: registryTxHash })
+            .eq('id', entry.recipient_id);
+
+          registrySynced += 1;
+        } catch (registryError: any) {
+          console.warn(
+            `Registry mark_balance_created failed for ${entry.wallet_address}:`,
+            registryError?.message
+          );
+        }
+      }
+    }
+
     return res.status(200).json({
       synced: synced.length,
       unmatched,
       balances: recipientEffects.length,
+      registry_synced: registrySynced,
       recipients: synced,
     });
   } catch (err: any) {

@@ -232,6 +232,79 @@ fn record_claim_rejects_unfunded_and_duplicate_claims() {
 }
 
 #[test]
+fn admin_can_record_balances_and_claims_on_behalf_of_organizer() {
+    // ReRail's backend observes balance creation and claim execution, so the
+    // admin key must be able to record both without the organizer present.
+    let (env, admin, organizer, recipient, asset, client) = setup();
+    let campaign_id = create_default_campaign(&env, &client, &organizer, &asset);
+    client.register_recipient(&organizer, &campaign_id, &recipient, &100, &bytes(&env, 40));
+    client.activate_campaign(&organizer, &campaign_id);
+
+    client.mark_balance_created(&admin, &campaign_id, &recipient, &bytes(&env, 41));
+    assert_eq!(
+        client.get_recipient(&campaign_id, &recipient).status,
+        RecipientStatus::Funded
+    );
+
+    client.record_claim(&admin, &campaign_id, &recipient, &bytes(&env, 42));
+    assert_eq!(
+        client.get_recipient(&campaign_id, &recipient).status,
+        RecipientStatus::Claimed
+    );
+}
+
+#[test]
+fn third_party_cannot_record_balances_or_claims() {
+    // Authorisation is not the same as authentication: mock_all_auths lets the
+    // stranger sign, but they are neither the organizer nor the admin.
+    let (env, _admin, organizer, recipient, asset, client) = setup();
+    let stranger = Address::generate(&env);
+    let campaign_id = create_default_campaign(&env, &client, &organizer, &asset);
+    client.register_recipient(&organizer, &campaign_id, &recipient, &100, &bytes(&env, 43));
+    client.activate_campaign(&organizer, &campaign_id);
+
+    assert!(client
+        .try_mark_balance_created(&stranger, &campaign_id, &recipient, &bytes(&env, 44))
+        .is_err());
+
+    client.mark_balance_created(&organizer, &campaign_id, &recipient, &bytes(&env, 45));
+
+    assert!(client
+        .try_record_claim(&stranger, &campaign_id, &recipient, &bytes(&env, 46))
+        .is_err());
+}
+
+#[test]
+#[should_panic]
+fn admin_recording_still_requires_a_signature() {
+    // The admin path relaxes who may call, never whether they must sign.
+    let env = Env::default();
+    env.ledger().set_timestamp(1_000);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let asset = Address::generate(&env);
+    let contract_id = env.register(ReRailRegistry, (admin.clone(),));
+    let client = ReRailRegistryClient::new(&env, &contract_id);
+
+    env.mock_all_auths();
+    let campaign_id = client.create_campaign(
+        &organizer,
+        &String::from_str(&env, "Hackathon"),
+        &asset,
+        &100,
+        &1_000,
+        &2_000,
+    );
+    client.register_recipient(&organizer, &campaign_id, &recipient, &100, &bytes(&env, 47));
+    client.activate_campaign(&organizer, &campaign_id);
+
+    env.set_auths(&[]);
+    client.mark_balance_created(&admin, &campaign_id, &recipient, &bytes(&env, 48));
+}
+
+#[test]
 fn expire_campaign_requires_deadline_to_pass() {
     let (env, _admin, organizer, recipient, asset, client) = setup();
     let campaign_id = create_default_campaign(&env, &client, &organizer, &asset);
