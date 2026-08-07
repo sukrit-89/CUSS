@@ -2,7 +2,7 @@
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, Address, BytesN, Env,
-    String,
+    String, Vec,
 };
 
 const DAY_IN_LEDGERS: u32 = 17_280;
@@ -10,6 +10,15 @@ const INSTANCE_TTL_THRESHOLD: u32 = 30 * DAY_IN_LEDGERS;
 const INSTANCE_TTL_EXTEND_TO: u32 = 120 * DAY_IN_LEDGERS;
 const PERSISTENT_TTL_THRESHOLD: u32 = 30 * DAY_IN_LEDGERS;
 const PERSISTENT_TTL_EXTEND_TO: u32 = 120 * DAY_IN_LEDGERS;
+
+/// Most recipients one batch call may register.
+///
+/// Each recipient costs two write ledger entries (its record and its claim
+/// token index) against a network cap of 50 per transaction, and the campaign
+/// row plus instance storage take two more. That leaves room for 24; 20 keeps
+/// headroom for the read footprint and for validators voting the limit down.
+/// Larger payouts chunk client-side across several calls.
+const MAX_BATCH_RECIPIENTS: u32 = 20;
 
 #[contracttype]
 #[derive(Clone)]
@@ -56,6 +65,19 @@ pub struct Campaign {
     pub claimed_count: u32,
 }
 
+/// One entry of a batch registration.
+///
+/// Registering recipients one call at a time meant one wallet signature per
+/// recipient — 50 prompts for a 50-person payout. Batching is what makes the
+/// registry usable at real campaign sizes.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecipientInput {
+    pub recipient: Address,
+    pub amount: i128,
+    pub claim_token_hash: BytesN<32>,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecipientRecord {
@@ -85,6 +107,8 @@ pub enum Error {
     ClaimAlreadyRecorded = 12,
     DeadlineNotReached = 13,
     Overflow = 14,
+    EmptyBatch = 15,
+    BatchTooLarge = 16,
 }
 
 #[contractevent]
@@ -166,34 +190,18 @@ impl ReRailRegistry {
         deadline: u64,
     ) -> Result<u64, Error> {
         organizer.require_auth();
-        validate_amount(default_amount)?;
-        if total_pool < default_amount {
-            return Err(Error::InvalidPool);
-        }
-        validate_deadline(&env, deadline)?;
 
-        let campaign_id = Self::campaign_count(env.clone())
-            .checked_add(1)
-            .ok_or(Error::Overflow)?;
-        let campaign = Campaign {
-            id: campaign_id,
-            organizer: organizer.clone(),
+        let (campaign_id, campaign) = build_campaign(
+            &env,
+            &organizer,
             name,
             asset,
             default_amount,
             total_pool,
             deadline,
-            status: CampaignStatus::Draft,
-            recipient_count: 0,
-            claimed_count: 0,
-        };
+        )?;
 
-        let next_key = DataKey::NextCampaignId;
-        let campaign_key = DataKey::Campaign(campaign_id);
-        env.storage().instance().set(&next_key, &campaign_id);
-        env.storage().persistent().set(&campaign_key, &campaign);
-        bump_instance_ttl(&env);
-        bump_persistent_ttl(&env, &campaign_key);
+        store_new_campaign(&env, campaign_id, &campaign);
 
         CampaignCreated {
             campaign_id,
@@ -202,6 +210,86 @@ impl ReRailRegistry {
         .publish(&env);
 
         Ok(campaign_id)
+    }
+
+    /// Creates a campaign, registers every recipient, and activates it — all in
+    /// one invocation, so the organizer signs exactly once no matter how many
+    /// recipients the payout has.
+    ///
+    /// Returns the new campaign id.
+    pub fn create_and_register(
+        env: Env,
+        organizer: Address,
+        name: String,
+        asset: Address,
+        default_amount: i128,
+        total_pool: i128,
+        deadline: u64,
+        recipients: Vec<RecipientInput>,
+    ) -> Result<u64, Error> {
+        organizer.require_auth();
+
+        validate_batch(&recipients)?;
+
+        let (campaign_id, mut campaign) = build_campaign(
+            &env,
+            &organizer,
+            name,
+            asset,
+            default_amount,
+            total_pool,
+            deadline,
+        )?;
+
+        // Reserve the id before registering so a duplicate inside the batch
+        // rolls the whole invocation back rather than burning an id.
+        store_new_campaign(&env, campaign_id, &campaign);
+
+        CampaignCreated {
+            campaign_id,
+            organizer,
+        }
+        .publish(&env);
+
+        for input in recipients.iter() {
+            register_one(&env, &mut campaign, campaign_id, input)?;
+        }
+
+        campaign.status = CampaignStatus::Active;
+        store_campaign(&env, campaign_id, &campaign);
+
+        Ok(campaign_id)
+    }
+
+    /// Registers many recipients against an existing Draft campaign in one call.
+    ///
+    /// Returns the campaign's recipient count after the batch, so a client
+    /// chunking a large payout can confirm nothing was silently dropped.
+    pub fn register_recipients(
+        env: Env,
+        organizer: Address,
+        campaign_id: u64,
+        recipients: Vec<RecipientInput>,
+    ) -> Result<u32, Error> {
+        organizer.require_auth();
+        bump_instance_ttl(&env);
+
+        validate_batch(&recipients)?;
+
+        let mut campaign = load_campaign(&env, campaign_id)?;
+        require_organizer(&campaign, &organizer)?;
+        if campaign.status != CampaignStatus::Draft {
+            return Err(Error::InvalidStatus);
+        }
+
+        for input in recipients.iter() {
+            register_one(&env, &mut campaign, campaign_id, input)?;
+        }
+
+        let recipient_count = campaign.recipient_count;
+        store_campaign(&env, campaign_id, &campaign);
+
+        Ok(recipient_count)
     }
 
     pub fn get_campaign(env: Env, campaign_id: u64) -> Result<Campaign, Error> {
@@ -225,7 +313,6 @@ impl ReRailRegistry {
     ) -> Result<(), Error> {
         organizer.require_auth();
         bump_instance_ttl(&env);
-        validate_amount(amount)?;
 
         let mut campaign = load_campaign(&env, campaign_id)?;
         require_organizer(&campaign, &organizer)?;
@@ -233,42 +320,18 @@ impl ReRailRegistry {
             return Err(Error::InvalidStatus);
         }
 
-        let recipient_key = DataKey::Recipient(campaign_id, recipient.clone());
-        if env.storage().persistent().has(&recipient_key) {
-            return Err(Error::DuplicateRecipient);
-        }
-
-        let token_key = DataKey::ClaimToken(campaign_id, claim_token_hash.clone());
-        if env.storage().persistent().has(&token_key) {
-            return Err(Error::DuplicateClaimToken);
-        }
-
-        campaign.recipient_count = campaign
-            .recipient_count
-            .checked_add(1)
-            .ok_or(Error::Overflow)?;
-        let record = RecipientRecord {
+        register_one(
+            &env,
+            &mut campaign,
             campaign_id,
-            recipient: recipient.clone(),
-            amount,
-            claim_token_hash: claim_token_hash.clone(),
-            status: RecipientStatus::Pending,
-            registered_at: env.ledger().timestamp(),
-        };
+            RecipientInput {
+                recipient,
+                amount,
+                claim_token_hash,
+            },
+        )?;
 
-        let campaign_key = DataKey::Campaign(campaign_id);
-        env.storage().persistent().set(&campaign_key, &campaign);
-        env.storage().persistent().set(&recipient_key, &record);
-        env.storage().persistent().set(&token_key, &recipient);
-        bump_persistent_ttl(&env, &campaign_key);
-        bump_persistent_ttl(&env, &recipient_key);
-        bump_persistent_ttl(&env, &token_key);
-
-        RecipientRegistered {
-            campaign_id,
-            recipient,
-        }
-        .publish(&env);
+        store_campaign(&env, campaign_id, &campaign);
 
         Ok(())
     }
@@ -431,6 +494,123 @@ impl ReRailRegistry {
         }
         exists
     }
+}
+
+/// Validates the campaign inputs and allocates the next id.
+///
+/// Split out of `create_campaign` so `create_and_register` can reuse it without
+/// requiring a second authorization from the organizer.
+fn build_campaign(
+    env: &Env,
+    organizer: &Address,
+    name: String,
+    asset: Address,
+    default_amount: i128,
+    total_pool: i128,
+    deadline: u64,
+) -> Result<(u64, Campaign), Error> {
+    validate_amount(default_amount)?;
+    if total_pool < default_amount {
+        return Err(Error::InvalidPool);
+    }
+    validate_deadline(env, deadline)?;
+
+    let next_id: u64 = env
+        .storage()
+        .instance()
+        .get(&DataKey::NextCampaignId)
+        .unwrap_or(0);
+    let campaign_id = next_id.checked_add(1).ok_or(Error::Overflow)?;
+
+    Ok((
+        campaign_id,
+        Campaign {
+            id: campaign_id,
+            organizer: organizer.clone(),
+            name,
+            asset,
+            default_amount,
+            total_pool,
+            deadline,
+            status: CampaignStatus::Draft,
+            recipient_count: 0,
+            claimed_count: 0,
+        },
+    ))
+}
+
+fn store_new_campaign(env: &Env, campaign_id: u64, campaign: &Campaign) {
+    env.storage()
+        .instance()
+        .set(&DataKey::NextCampaignId, &campaign_id);
+    bump_instance_ttl(env);
+    store_campaign(env, campaign_id, campaign);
+}
+
+/// Registers a single recipient against an in-memory campaign.
+///
+/// The caller owns persisting `campaign` — a batch writes it once at the end
+/// rather than once per recipient.
+fn register_one(
+    env: &Env,
+    campaign: &mut Campaign,
+    campaign_id: u64,
+    input: RecipientInput,
+) -> Result<(), Error> {
+    validate_amount(input.amount)?;
+
+    let recipient_key = DataKey::Recipient(campaign_id, input.recipient.clone());
+    if env.storage().persistent().has(&recipient_key) {
+        return Err(Error::DuplicateRecipient);
+    }
+
+    let token_key = DataKey::ClaimToken(campaign_id, input.claim_token_hash.clone());
+    if env.storage().persistent().has(&token_key) {
+        return Err(Error::DuplicateClaimToken);
+    }
+
+    campaign.recipient_count = campaign
+        .recipient_count
+        .checked_add(1)
+        .ok_or(Error::Overflow)?;
+
+    let record = RecipientRecord {
+        campaign_id,
+        recipient: input.recipient.clone(),
+        amount: input.amount,
+        claim_token_hash: input.claim_token_hash,
+        status: RecipientStatus::Pending,
+        registered_at: env.ledger().timestamp(),
+    };
+
+    env.storage().persistent().set(&recipient_key, &record);
+    env.storage()
+        .persistent()
+        .set(&token_key, &input.recipient);
+    bump_persistent_ttl(env, &recipient_key);
+    bump_persistent_ttl(env, &token_key);
+
+    RecipientRegistered {
+        campaign_id,
+        recipient: input.recipient,
+    }
+    .publish(env);
+
+    Ok(())
+}
+
+/// Rejects a batch that is empty or larger than one transaction can write.
+///
+/// Without the upper bound an oversized batch fails deep inside the host with
+/// `Budget, ExceededLimit`, which tells the organizer nothing.
+fn validate_batch(recipients: &Vec<RecipientInput>) -> Result<(), Error> {
+    if recipients.is_empty() {
+        return Err(Error::EmptyBatch);
+    }
+    if recipients.len() > MAX_BATCH_RECIPIENTS {
+        return Err(Error::BatchTooLarge);
+    }
+    Ok(())
 }
 
 fn validate_amount(amount: i128) -> Result<(), Error> {

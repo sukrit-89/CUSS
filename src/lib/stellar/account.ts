@@ -1,4 +1,4 @@
-import { Operation, Asset } from '@stellar/stellar-sdk';
+import { Asset } from '@stellar/stellar-sdk';
 import { getHorizonServer } from '@/lib/stellar/client';
 
 /**
@@ -28,53 +28,31 @@ export async function accountExists(publicKey: string): Promise<boolean> {
 }
 
 /**
- * Funds an account with the testnet friendbot.
+ * Reads an account's balance for a given asset.
  *
- * Testnet-only convenience for claim-page state 2 — on pubnet the recipient
- * has to fund the account themselves.
+ * Returns `null` when the account does not exist, and `'0'` when the account
+ * exists but holds no trustline for the asset — the caller needs to tell those
+ * two cases apart to give the organizer a useful funding error.
  */
-export async function fundWithFriendbot(publicKey: string): Promise<void> {
-  const response = await fetch(
-    `https://friendbot.stellar.org?addr=${encodeURIComponent(publicKey)}`,
-  );
+export async function getAssetBalance(
+  publicKey: string,
+  asset: Asset,
+): Promise<string | null> {
+  try {
+    const account = await loadAccount(publicKey);
+    const balances = account.balances as unknown as Array<Record<string, string>>;
 
-  if (!response.ok) {
-    // Friendbot 400s when the account already exists, which is not a failure
-    // from the caller's point of view.
-    if (await accountExists(publicKey)) return;
-    throw new Error('Friendbot could not fund this account. Try again shortly.');
+    if (asset.isNative()) {
+      return balances.find((b) => b.asset_type === 'native')?.balance ?? '0';
+    }
+
+    const match = balances.find(
+      (b) => b.asset_code === asset.getCode() && b.asset_issuer === asset.getIssuer(),
+    );
+
+    return match?.balance ?? '0';
+  } catch (error: any) {
+    if (error?.response?.status === 404) return null;
+    throw error;
   }
-}
-
-/**
- * Builds operation array for sponsored account + USDC trustline creation.
- * @param sponsorPublicKey The sponsor's public key.
- * @param newAccountPublicKey The new account's public key.
- * @param startingBalance The native asset starting balance.
- * @param asset The asset (e.g. USDC) to create a trustline for.
- */
-export function buildSponsoredAccountOps(
-  sponsorPublicKey: string,
-  newAccountPublicKey: string,
-  startingBalance: string,
-  asset: Asset
-): Operation[] {
-  return [
-    Operation.beginSponsoringFutureReserves({
-      sponsoredId: newAccountPublicKey,
-      source: sponsorPublicKey,
-    }),
-    Operation.createAccount({
-      destination: newAccountPublicKey,
-      startingBalance,
-      source: sponsorPublicKey,
-    }),
-    Operation.changeTrust({
-      asset,
-      source: newAccountPublicKey,
-    }),
-    Operation.endSponsoringFutureReserves({
-      source: newAccountPublicKey,
-    }),
-  ];
 }

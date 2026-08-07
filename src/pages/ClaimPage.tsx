@@ -1,147 +1,193 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import {
-  Wallet,
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  Copy,
-  Check,
+  CheckCircle,
   ExternalLink,
-  Download,
-  Sparkles,
-  ShieldPlus,
+  Loader2,
+  Lock,
+  Monitor,
+  XCircle,
 } from 'lucide-react';
+import { WalletButton } from '@/components/WalletButton';
 import { useWalletStore } from '@/stores/wallet.store';
 import {
+  accountExists,
   buildClaimInnerTransaction,
   buildTrustlineInnerTransaction,
-  accountExists,
   hasTrustline,
-  fundWithFriendbot,
 } from '@/lib/stellar';
 import { USDC_ASSET } from '@/config/stellar';
+import { CLAIM_POLL_INTERVAL_MS, EXPLORER_TX_BASE_URL, PUBLIC_BG_VIDEO } from '@/config/constants';
 
-type ClaimState =
+type PageState =
   | 'loading'
-  | 'idle'
+  | 'invalid'
+  | 'already-claimed'
+  | 'expired'
+  | 'pending'
   | 'signing'
   | 'submitting'
   | 'success'
-  | 'error'
-  | 'already-claimed'
-  | 'expired';
+  | 'error';
 
-/**
- * Readiness of the recipient's wallet, independent of the claim transaction
- * itself. Mirrors the 4-state machine in the PRD: no extension, no account,
- * no trustline, ready.
- */
+/** Wallet readiness, PRD states 1–4 plus the wrong-wallet guard. */
 type Readiness =
-  | 'unknown'      // not connected yet
   | 'checking'
-  | 'no-freighter'
+  | 'no-wallet'
+  | 'not-connected'
+  | 'wrong-wallet'
   | 'no-account'
   | 'no-trustline'
   | 'ready';
 
 interface ClaimData {
-  name: string;
+  name?: string;
   amount: string;
   asset_code: string;
-  campaign_name: string;
-  balance_id: string | null;
-  wallet_address: string | null;
-  deadline: string | null;
+  campaign_name?: string;
+  balance_id?: string | null;
+  /** The address the claimable balance names as claimant. Only it can claim. */
+  wallet_address?: string | null;
+  deadline?: string | null;
+  claimed_at?: string | null;
+  tx_hash?: string | null;
+}
+
+function truncateAddress(address: string) {
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+/**
+ * What the recipient is told at each blocked state. `ready` and `checking`
+ * have no guide — one shows the claim button, the other a spinner.
+ */
+const STEP_GUIDES: Partial<Record<Readiness, string[]>> = {
+  'no-wallet': [
+    'Install a Stellar wallet (Freighter, xBull, Hana or Lobstr)',
+    'Create a wallet and save your recovery phrase',
+    'This page detects it automatically — no refresh needed',
+  ],
+  'not-connected': [
+    'Connect the wallet this payout was addressed to',
+    'ReRail never asks for your recovery phrase',
+    'You will approve one signature, and pay no fee',
+  ],
+  'wrong-wallet': [
+    'This payout is locked to one specific Stellar address',
+    'Switch to that address in your wallet, then reconnect',
+    'Only that address can claim — no one else can take it',
+  ],
+  'no-account': [
+    'Your Stellar address is not activated on the network yet',
+    'ReRail can activate it for you and cover the reserve',
+    'You pay no XLM and receive one signature request',
+  ],
+  'no-trustline': [
+    'Stellar asks you to opt in to each asset once',
+    'Approve the USDC trustline signature',
+    'ReRail pays this network fee',
+  ],
+};
+
+const isMobileDevice = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+function formatDate(value?: string | null) {
+  if (!value) return 'an earlier date';
+  return new Date(value).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 export function ClaimPage() {
   const { id } = useParams<{ id: string }>();
   const token = id || '';
 
-  const [claimState, setClaimState] = useState<ClaimState>('loading');
+  const [pageState, setPageState] = useState<PageState>('loading');
   const [claimData, setClaimData] = useState<ClaimData | null>(null);
+  const [message, setMessage] = useState('');
   const [txHash, setTxHash] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
-  const [copiedTx, setCopiedTx] = useState(false);
-
-  const [readiness, setReadiness] = useState<Readiness>('unknown');
-  const [readinessBusy, setReadinessBusy] = useState(false);
-  const [readinessError, setReadinessError] = useState('');
+  const [readiness, setReadiness] = useState<Readiness>('checking');
+  const [busy, setBusy] = useState(false);
+  const [stepError, setStepError] = useState('');
 
   const wallet = useWalletStore();
-  const checkFreighter = useWalletStore((state) => state.checkFreighter);
+  const checkWallets = useWalletStore((state) => state.checkWallets);
+  const isMobile = useMemo(() => isMobileDevice(), []);
 
-  // ── Resolve claim link on mount ──────────────────────────────────────────
+  // ── Resolve the claim link ───────────────────────────────────────────────
   useEffect(() => {
     if (!token) {
-      setClaimState('error');
-      setErrorMessage('No claim token provided.');
+      setPageState('invalid');
+      setMessage('This link is invalid.');
       return;
     }
 
-    if (token === 'demo') {
-      setClaimData({
-        name: 'Demo Recipient',
-        amount: '250.00',
-        asset_code: 'USDC',
-        campaign_name: 'Acme Hackathon Grants',
-        balance_id: '000000008f3a74b92c1048d2e68a3f91c9e00000000000000000000000000000',
-        wallet_address: null,
-        deadline: null,
-      });
-      setClaimState('idle');
-      return;
-    }
-
-    const resolve = async () => {
+    (async () => {
       try {
         const res = await fetch(`/api/claim/${token}/resolve`);
         const data = await res.json();
 
-        if (!res.ok) {
-          if (res.status === 410 && data.error === 'Already claimed') {
-            setClaimState('already-claimed');
-          } else if (res.status === 410) {
-            setClaimState('expired');
-            setErrorMessage(data.error || 'This claim link has expired.');
-          } else {
-            setClaimState('error');
-            setErrorMessage(data.error || 'Claim not found.');
-          }
+        if (res.ok) {
+          setClaimData(data);
+          setPageState('pending');
           return;
         }
 
-        setClaimData(data);
-        setClaimState('idle');
-      } catch {
-        setClaimState('error');
-        setErrorMessage('Failed to load claim details. Please try again.');
-      }
-    };
+        setClaimData({
+          amount: data.amount ?? '—',
+          asset_code: data.asset_code ?? 'USDC',
+          campaign_name: data.campaign_name,
+          claimed_at: data.claimed_at,
+          tx_hash: data.tx_hash,
+          deadline: data.deadline,
+        });
 
-    resolve();
+        if (res.status === 410 && data.status === 'claimed') {
+          setPageState('already-claimed');
+        } else if (res.status === 410) {
+          setPageState('expired');
+          setMessage(
+            `This link expired on ${formatDate(data.deadline)}. Contact the organizer.`,
+          );
+        } else {
+          setPageState('invalid');
+          setMessage(data.error || 'This link is invalid.');
+        }
+      } catch {
+        setPageState('invalid');
+        setMessage('Could not load this claim link. Please try again.');
+      }
+    })();
   }, [token]);
 
-  // ── Check Freighter on mount ─────────────────────────────────────────────
+  // ── Discover installed wallets once ─────────────────────────────────────
   useEffect(() => {
-    checkFreighter();
-  }, [checkFreighter]);
+    if (!isMobile) checkWallets();
+  }, [checkWallets, isMobile]);
 
-  // ── Wallet readiness: account exists? trustline present? ─────────────────
+  // ── Wallet state machine ────────────────────────────────────────────────
+  const expectedAddress = claimData?.wallet_address ?? null;
+
   const evaluateReadiness = useCallback(async () => {
-    if (token === 'demo') {
-      setReadiness('ready');
+    if (!wallet.isWalletAvailable && !wallet.isConnected) {
+      setReadiness('no-wallet');
       return;
     }
 
     if (!wallet.publicKey) {
-      setReadiness(wallet.isFreighterInstalled ? 'unknown' : 'no-freighter');
+      setReadiness('not-connected');
       return;
     }
 
-    setReadiness('checking');
-    setReadinessError('');
+    // The claimable balance names one claimant. Checking the account and
+    // trustline of any other connected wallet would walk the recipient all the
+    // way to a signature the server is guaranteed to reject.
+    if (expectedAddress && wallet.publicKey !== expectedAddress) {
+      setReadiness('wrong-wallet');
+      return;
+    }
 
     try {
       if (!(await accountExists(wallet.publicKey))) {
@@ -155,41 +201,81 @@ export function ClaimPage() {
       }
 
       setReadiness('ready');
-    } catch (err: unknown) {
-      setReadinessError(
-        err instanceof Error ? err.message : 'Could not read your account from Stellar.',
-      );
-      setReadiness('unknown');
+    } catch (err) {
+      setStepError(err instanceof Error ? err.message : 'Could not read your account.');
     }
-  }, [wallet.publicKey, wallet.isFreighterInstalled, token]);
+  }, [expectedAddress, wallet.isWalletAvailable, wallet.isConnected, wallet.publicKey]);
 
   useEffect(() => {
+    if (isMobile || pageState !== 'pending') return;
     evaluateReadiness();
-  }, [evaluateReadiness]);
+  }, [evaluateReadiness, isMobile, pageState]);
 
-  // ── State 2: fund the account (testnet friendbot) ────────────────────────
-  const handleFundAccount = useCallback(async () => {
+  // ── Poll while the recipient is still setting their wallet up ───────────
+  const readinessRef = useRef(readiness);
+  readinessRef.current = readiness;
+
+  useEffect(() => {
+    if (isMobile || pageState !== 'pending') return;
+
+    const interval = setInterval(() => {
+      if (readinessRef.current === 'ready') return;
+      checkWallets();
+      evaluateReadiness();
+    }, CLAIM_POLL_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [checkWallets, evaluateReadiness, isMobile, pageState]);
+
+  // ── Wrong wallet: let the recipient pick a different one ────────────────
+  const handleSwitchWallet = useCallback(async () => {
+    setStepError('');
+    await wallet.disconnect();
+    await wallet.connect();
+  }, [wallet]);
+
+  // ── State 2: activate the account, sponsored by ReRail ──────────────────
+  // The sponsorship opens the USDC trustline in the same transaction, so a
+  // successful run lands the recipient straight on `ready`.
+  const handleSponsorAccount = useCallback(async () => {
     if (!wallet.publicKey) return;
-
-    setReadinessBusy(true);
-    setReadinessError('');
+    setBusy(true);
+    setStepError('');
 
     try {
-      await fundWithFriendbot(wallet.publicKey);
-      await evaluateReadiness();
-    } catch (err: unknown) {
-      setReadinessError(err instanceof Error ? err.message : 'Failed to fund account.');
-    } finally {
-      setReadinessBusy(false);
-    }
-  }, [wallet.publicKey, evaluateReadiness]);
+      const buildRes = await fetch(`/api/account/${token}/sponsor`, { method: 'POST' });
+      const built = await buildRes.json();
 
-  // ── State 3: add the USDC trustline, fee-bumped by ReRail ────────────────
+      if (!buildRes.ok || !built.unsigned_tx_xdr) {
+        throw new Error(built.error || 'Could not prepare your account activation.');
+      }
+
+      const signedXdr = await wallet.signTransaction(built.unsigned_tx_xdr);
+
+      const submitRes = await fetch(`/api/account/${token}/sponsor`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signed_tx_xdr: signedXdr }),
+      });
+      const result = await submitRes.json();
+
+      if (!submitRes.ok || !result.success) {
+        throw new Error(result.error || 'Failed to activate your account.');
+      }
+
+      await evaluateReadiness();
+    } catch (err) {
+      setStepError(err instanceof Error ? err.message : 'Failed to activate your account.');
+    } finally {
+      setBusy(false);
+    }
+  }, [wallet, token, evaluateReadiness]);
+
+  // ── State 3: enable USDC (fee-bumped by ReRail) ─────────────────────────
   const handleAddTrustline = useCallback(async () => {
     if (!wallet.publicKey) return;
-
-    setReadinessBusy(true);
-    setReadinessError('');
+    setBusy(true);
+    setStepError('');
 
     try {
       const innerTxXdr = await buildTrustlineInnerTransaction(wallet.publicKey, USDC_ASSET);
@@ -200,53 +286,35 @@ export function ClaimPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ signed_inner_tx_xdr: signedXdr }),
       });
-
       const result = await res.json();
 
       if (!res.ok || !result.success) {
-        throw new Error(result.error || 'Failed to add the USDC trustline.');
+        throw new Error(result.error || 'Failed to enable USDC.');
       }
 
       await evaluateReadiness();
-    } catch (err: unknown) {
-      setReadinessError(err instanceof Error ? err.message : 'Failed to add trustline.');
+    } catch (err) {
+      setStepError(err instanceof Error ? err.message : 'Failed to enable USDC.');
     } finally {
-      setReadinessBusy(false);
+      setBusy(false);
     }
   }, [wallet, token, evaluateReadiness]);
 
-  // ── Claim handler ────────────────────────────────────────────────────────
+  // ── State 4: claim ──────────────────────────────────────────────────────
   const handleClaim = useCallback(async () => {
-    if (!wallet.isConnected || !wallet.publicKey || !claimData?.balance_id) return;
-
-    // Demo mode — show informational state instead of attempting real TX
-    if (token === 'demo') {
-      setTxHash('demo_tx_00000000000000000000000000000000');
-      setClaimState('success');
-      return;
-    }
+    if (!wallet.publicKey || !claimData?.balance_id) return;
 
     try {
-      setClaimState('signing');
-
-      // 1. Build inner transaction for the recipient
-      const innerTxXdr = await buildClaimInnerTransaction(
-        wallet.publicKey,
-        claimData.balance_id,
-      );
-
-      // 2. Sign with Freighter
+      setPageState('signing');
+      const innerTxXdr = await buildClaimInnerTransaction(wallet.publicKey, claimData.balance_id);
       const signedXdr = await wallet.signTransaction(innerTxXdr);
 
-      setClaimState('submitting');
-
-      // 3. Submit to our serverless fee-bump endpoint
+      setPageState('submitting');
       const res = await fetch(`/api/claim/${token}/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ signed_inner_tx_xdr: signedXdr }),
       });
-
       const result = await res.json();
 
       if (!res.ok || !result.success) {
@@ -254,209 +322,234 @@ export function ClaimPage() {
       }
 
       setTxHash(result.tx_hash || result.hash);
-      setClaimState('success');
-    } catch (err: unknown) {
-      setClaimState('error');
-      setErrorMessage(err instanceof Error ? err.message : 'An unexpected error occurred.');
+      setPageState('success');
+    } catch (err) {
+      setPageState('error');
+      setMessage(err instanceof Error ? err.message : 'Claim failed.');
     }
   }, [wallet, claimData, token]);
 
-  const handleCopyTx = () => {
-    navigator.clipboard.writeText(txHash);
-    setCopiedTx(true);
-    setTimeout(() => setCopiedTx(false), 2000);
-  };
-
-  const displayAmount = claimData
-    ? `${claimData.amount} ${claimData.asset_code || 'USDC'}`
-    : '';
-
-  const explorerUrl = txHash
-    ? `https://stellar.expert/explorer/testnet/tx/${txHash}`
-    : '';
-
-  const truncatedHash = txHash
-    ? `${txHash.slice(0, 6)}...${txHash.slice(-4)}`
-    : '';
+  const stepGuide = STEP_GUIDES[readiness] ?? [];
+  const shortToken = token.length > 12 ? `${token.slice(0, 4)}...${token.slice(-3)}` : token;
+  const displayHash = txHash || claimData?.tx_hash || '';
+  const explorerUrl = displayHash ? `${EXPLORER_TX_BASE_URL}/${displayHash}` : '';
 
   return (
-    <div className="min-h-screen w-full bg-[#0a0a0a] text-white flex flex-col justify-between items-center p-4 sm:p-6 relative overflow-hidden">
-      {/* Background ambient lighting */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-white/[0.02] rounded-full blur-3xl pointer-events-none" />
+    <div className="min-h-screen w-full text-white relative overflow-hidden">
+      <video
+        className="absolute inset-0 w-full h-full object-cover"
+        autoPlay
+        muted
+        loop
+        playsInline
+        src={PUBLIC_BG_VIDEO}
+      />
+      <div className="absolute inset-0 bg-black/20 pointer-events-none" />
 
-      {/* Header link */}
-      <header className="w-full max-w-md flex justify-between items-center py-4">
-        <Link to="/" className="text-white/40 hover:text-white text-xs transition-colors">
-          ← ReRail
-        </Link>
-      </header>
+      <div className="absolute inset-0 flex items-center justify-center px-4">
+        <div className="liquid-glass rounded-3xl p-7 w-full max-w-sm flex flex-col gap-5">
+          {/* Trust signal */}
+          <div className="liquid-glass rounded-lg px-3 py-2 flex items-center gap-2">
+            <Lock size={11} className="text-white/40" />
+            <span className="font-mono text-xs text-white/40">rerail.app/claim/{shortToken}</span>
+          </div>
 
-      {/* Main Centered Card */}
-      <main className="w-full max-w-md my-auto">
-        <div className="liquid-glass rounded-2xl p-8 flex flex-col gap-1 shadow-2xl">
-          {/* STATE: LOADING */}
-          {claimState === 'loading' && (
-            <div className="py-10 flex flex-col items-center justify-center text-center gap-4">
-              <Loader2 size={40} strokeWidth={1.5} className="animate-spin text-white/80" />
-              <div className="flex flex-col gap-1">
-                <h3 className="text-white text-lg font-medium">Loading claim...</h3>
-                <p className="text-white/40 text-xs">Resolving your payout details</p>
-              </div>
-            </div>
-          )}
-
-          {/* STATE: IDLE */}
-          {claimState === 'idle' && claimData && (
-            <>
-              <div className="flex items-center justify-between">
-                <span className="text-white/40 text-xs uppercase tracking-wide">
-                  You've received a payout
-                </span>
-                <span className="text-white/30 font-mono text-[10px]">
-                  #{token.slice(0, 8)}
-                </span>
-              </div>
-              <h1 className="text-white text-5xl font-medium tracking-tight mt-1 mb-1">
-                {displayAmount}
-              </h1>
-              <p className="text-white/60 text-sm">
-                from <span className="text-white font-medium">{claimData.campaign_name}</span>
+          {isMobile ? (
+            <div className="flex flex-col gap-3 py-4">
+              <Monitor size={24} className="text-white/40 mx-auto" />
+              <p className="text-white text-base font-medium text-center">
+                Open on desktop to claim
               </p>
-
-              <div className="border-t border-white/10 my-6" />
-
-              {/* ── SETUP STATE 1: Freighter not installed ─────────────────
-                  Guide inline. Never redirect away from the claim page. */}
-              {!wallet.isFreighterInstalled && !wallet.isConnected ? (
-                <div className="flex flex-col gap-3">
-                  <div className="liquid-glass rounded-xl p-4 flex flex-col gap-3">
-                    <div className="flex items-center gap-2 text-white text-sm font-medium">
-                      <Download size={16} strokeWidth={1.5} />
-                      <span>You'll need a Stellar wallet first</span>
-                    </div>
-                    <ol className="text-white/60 text-xs flex flex-col gap-2 list-decimal list-inside">
-                      <li>
-                        Install the{' '}
-                        <a
-                          href="https://www.freighter.app/"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-white underline"
-                        >
-                          Freighter extension
-                        </a>{' '}
-                        (Chrome, Brave, or Firefox on desktop)
-                      </li>
-                      <li>Create a wallet and save your recovery phrase</li>
-                      <li>Come back to this page and press refresh below</li>
-                    </ol>
-                  </div>
-                  <button
-                    onClick={() => checkFreighter()}
-                    className="w-full bg-white text-black font-medium rounded-full px-6 py-3 text-sm hover:bg-white/90 transition-colors"
-                  >
-                    I've installed Freighter
-                  </button>
-                  <p className="text-white/30 text-xs text-center">
-                    Freighter is desktop-only. On mobile, open this link on a computer.
+              <p className="text-white/40 text-sm text-center">
+                Stellar browser wallets require a desktop browser.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Persistent amount display */}
+              {claimData && (
+                <div>
+                  <p className="text-white text-4xl font-medium font-mono">{claimData.amount}</p>
+                  <p className="text-white/40 text-sm">
+                    {claimData.asset_code || 'USDC'}
+                    {claimData.campaign_name ? ` · ${claimData.campaign_name}` : ''}
                   </p>
                 </div>
-              ) : !wallet.isConnected ? (
-                <button
-                  onClick={wallet.connect}
-                  className="liquid-glass rounded-xl px-4 py-3 text-white text-sm font-medium flex items-center justify-center gap-2.5 hover:bg-white/5 transition-colors mb-3"
-                >
-                  <Wallet size={18} strokeWidth={1.5} />
-                  <span>Connect Freighter Wallet</span>
-                </button>
-              ) : (
-                <>
-                  <div className="liquid-glass rounded-xl px-4 py-3 flex items-center justify-between text-sm mb-3">
-                    <div className="flex items-center gap-2">
-                      <Wallet size={16} strokeWidth={1.5} className="text-[#22c55e]" />
-                      <span className="text-white/80 font-mono text-xs">
-                        {wallet.publicKey?.slice(0, 4)}...{wallet.publicKey?.slice(-4)}
-                      </span>
-                    </div>
-                    <span className="text-xs text-[#22c55e] font-medium">Connected</span>
-                  </div>
+              )}
 
-                  {readinessError && (
-                    <div className="rounded-xl p-3 mb-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
-                      {readinessError}
+              {pageState === 'loading' && (
+                <div className="flex items-center gap-2 text-white/50 text-sm py-6 justify-center">
+                  <Loader2 size={16} className="animate-spin" /> Resolving your claim link...
+                </div>
+              )}
+
+              {(pageState === 'invalid' || pageState === 'error') && (
+                <div className="flex flex-col items-center gap-3 py-2 text-center">
+                  <XCircle size={28} className="text-red-300" />
+                  <p className="text-white/60 text-sm">{message || 'This link is invalid.'}</p>
+                </div>
+              )}
+
+              {pageState === 'expired' && (
+                <div className="flex flex-col items-center gap-3 py-2 text-center">
+                  <XCircle size={28} className="text-red-300" />
+                  <p className="text-white/60 text-sm">{message}</p>
+                </div>
+              )}
+
+              {pageState === 'already-claimed' && (
+                <div className="flex flex-col gap-3">
+                  <p className="text-white/60 text-sm">
+                    Already claimed on {formatDate(claimData?.claimed_at)}
+                  </p>
+                  {displayHash && (
+                    <>
+                      <div className="liquid-glass rounded-xl px-4 py-3 font-mono text-white/40 text-xs break-all">
+                        {displayHash}
+                      </div>
+                      <a
+                        href={explorerUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="liquid-glass rounded-full flex items-center justify-center gap-2 mx-auto px-4 py-2 text-white/70 text-xs hover:text-white transition-colors"
+                      >
+                        <ExternalLink size={13} /> View on Stellar Explorer
+                      </a>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {(pageState === 'signing' || pageState === 'submitting') && (
+                <div className="flex items-center gap-2 text-white/50 text-sm py-6 justify-center">
+                  <Loader2 size={16} className="animate-spin" />
+                  {pageState === 'signing' ? 'Waiting for your signature...' : 'Submitting claim...'}
+                </div>
+              )}
+
+              {pageState === 'success' && (
+                <div className="flex flex-col gap-3">
+                  <CheckCircle className="text-green-300 mx-auto" size={32} />
+                  <p className="text-white text-lg font-medium text-center">
+                    {claimData?.amount} {claimData?.asset_code || 'USDC'} received
+                  </p>
+                  <div className="liquid-glass rounded-xl px-4 py-3 font-mono text-white/40 text-xs break-all">
+                    {displayHash}
+                  </div>
+                  <a
+                    href={explorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="liquid-glass rounded-full flex items-center justify-center gap-2 mx-auto px-4 py-2 text-white/70 text-xs hover:text-white transition-colors"
+                  >
+                    <ExternalLink size={13} /> View on Stellar Explorer
+                  </a>
+                </div>
+              )}
+
+              {pageState === 'pending' && (
+                <>
+                  {stepError && (
+                    <div className="rounded-xl p-3 bg-red-500/10 text-red-300 text-xs">
+                      {stepError}
                     </div>
+                  )}
+
+                  {/* States 1–3: guided step list */}
+                  {stepGuide.length > 0 && (
+                    <ul className="flex flex-col gap-0">
+                      {stepGuide.map((text, index) => (
+                        <li
+                          key={text}
+                          className="border-b border-white/10 py-2.5 flex items-start gap-3"
+                        >
+                          <span className="liquid-glass w-5 h-5 rounded-full text-white/50 text-xs flex items-center justify-center shrink-0">
+                            {index + 1}
+                          </span>
+                          <span className="text-white/60 text-sm">{text}</span>
+                        </li>
+                      ))}
+                    </ul>
                   )}
 
                   {readiness === 'checking' && (
-                    <div className="flex items-center justify-center gap-2 py-4 text-white/50 text-xs">
-                      <Loader2 size={14} className="animate-spin" />
-                      <span>Checking your account...</span>
+                    <div className="flex items-center gap-2 text-white/40 text-xs justify-center">
+                      <Loader2 size={13} className="animate-spin" /> Checking your wallet...
                     </div>
                   )}
 
-                  {/* ── SETUP STATE 2: wallet exists, account not on-network ── */}
-                  {readiness === 'no-account' && (
-                    <div className="flex flex-col gap-3">
-                      <div className="liquid-glass rounded-xl p-4 flex flex-col gap-2">
-                        <div className="flex items-center gap-2 text-white text-sm font-medium">
-                          <Sparkles size={16} strokeWidth={1.5} />
-                          <span>Your account isn't active yet</span>
-                        </div>
-                        <p className="text-white/60 text-xs">
-                          A Stellar account has to exist on the network before it can hold
-                          anything. On testnet this is free and takes one click.
-                        </p>
+                  {readiness === 'not-connected' && (
+                    <WalletButton variant="primary" className="w-full" />
+                  )}
+
+                  {readiness === 'wrong-wallet' && expectedAddress && (
+                    <>
+                      <div className="liquid-glass rounded-xl px-4 py-3 flex flex-col gap-1.5">
+                        <span className="text-white/40 text-xs">Addressed to</span>
+                        <span className="font-mono text-white text-sm">
+                          {truncateAddress(expectedAddress)}
+                        </span>
+                        <span className="text-white/40 text-xs mt-1">You connected</span>
+                        <span className="font-mono text-red-300 text-sm">
+                          {truncateAddress(wallet.publicKey as string)}
+                        </span>
                       </div>
                       <button
-                        onClick={handleFundAccount}
-                        disabled={readinessBusy}
-                        className="w-full bg-white text-black font-medium rounded-full px-6 py-3 text-sm hover:bg-white/90 transition-colors disabled:opacity-50"
+                        onClick={handleSwitchWallet}
+                        className="bg-white text-black rounded-full w-full px-6 py-3 text-sm font-medium hover:bg-white/90 transition-colors"
                       >
-                        {readinessBusy ? 'Activating...' : 'Activate my account (free)'}
+                        Switch wallet
                       </button>
-                    </div>
+                    </>
                   )}
 
-                  {/* ── SETUP STATE 3: account exists, no USDC trustline ────── */}
+                  {readiness === 'no-account' && (
+                    <>
+                      <button
+                        onClick={handleSponsorAccount}
+                        disabled={busy}
+                        className="bg-white text-black rounded-full w-full px-6 py-3 text-sm font-medium disabled:opacity-50"
+                      >
+                        {busy ? 'Activating your account...' : 'Activate my Stellar account'}
+                      </button>
+                      <p className="text-white/30 text-xs text-center">
+                        ReRail covers the account reserve — you pay nothing
+                      </p>
+                    </>
+                  )}
+
                   {readiness === 'no-trustline' && (
-                    <div className="flex flex-col gap-3">
-                      <div className="liquid-glass rounded-xl p-4 flex flex-col gap-2">
-                        <div className="flex items-center gap-2 text-white text-sm font-medium">
-                          <ShieldPlus size={16} strokeWidth={1.5} />
-                          <span>One-time USDC setup</span>
-                        </div>
-                        <p className="text-white/60 text-xs">
-                          Stellar asks you to opt in to each asset once. Approve the
-                          signature — ReRail covers the fee, so this costs you nothing.
-                        </p>
-                      </div>
+                    <>
                       <button
                         onClick={handleAddTrustline}
-                        disabled={readinessBusy}
-                        className="w-full bg-white text-black font-medium rounded-full px-6 py-3 text-sm hover:bg-white/90 transition-colors disabled:opacity-50"
+                        disabled={busy}
+                        className="bg-white text-black rounded-full w-full px-6 py-3 text-sm font-medium disabled:opacity-50"
                       >
-                        {readinessBusy ? 'Adding USDC...' : 'Enable USDC'}
+                        {busy ? 'Enabling USDC...' : 'Enable USDC in my wallet'}
                       </button>
-                    </div>
+                      <p className="text-white/30 text-xs text-center">
+                        ReRail pays this network fee — you pay nothing
+                      </p>
+                    </>
                   )}
 
-                  {/* ── SETUP STATE 4: ready to claim ───────────────────────── */}
                   {readiness === 'ready' && (
                     <>
                       <button
                         onClick={handleClaim}
-                        disabled={!claimData.balance_id}
-                        className={`w-full font-medium rounded-full px-6 py-3 text-sm transition-colors ${
-                          claimData.balance_id
-                            ? 'bg-white text-black hover:bg-white/90 cursor-pointer'
+                        disabled={!claimData?.balance_id}
+                        className={`rounded-full w-full px-6 py-3 text-sm font-medium transition-colors ${
+                          claimData?.balance_id
+                            ? 'bg-white text-black hover:bg-white/90'
                             : 'bg-white/20 text-white/40 cursor-not-allowed'
                         }`}
                       >
-                        {!claimData.balance_id ? 'Balance not yet created' : 'Claim USDC'}
+                        {claimData?.balance_id
+                          ? `Claim ${claimData.amount} ${claimData.asset_code || 'USDC'} →`
+                          : 'Balance not yet created'}
                       </button>
-
-                      <p className="text-white/30 text-xs text-center mt-4">
-                        No XLM required. Gas covered by ReRail.
+                      <p className="text-white/30 text-xs text-center">
+                        No XLM required · irreversible
                       </p>
                     </>
                   )}
@@ -465,108 +558,11 @@ export function ClaimPage() {
             </>
           )}
 
-          {/* STATE: SIGNING */}
-          {claimState === 'signing' && (
-            <div className="py-10 flex flex-col items-center justify-center text-center gap-4">
-              <Loader2 size={40} strokeWidth={1.5} className="animate-spin text-white/80" />
-              <div className="flex flex-col gap-1">
-                <h3 className="text-white text-lg font-medium">Waiting for signature...</h3>
-                <p className="text-white/40 text-xs">Please sign the transaction in Freighter</p>
-              </div>
-            </div>
-          )}
-
-          {/* STATE: SUBMITTING */}
-          {claimState === 'submitting' && (
-            <div className="py-10 flex flex-col items-center justify-center text-center gap-4">
-              <Loader2 size={40} strokeWidth={1.5} className="animate-spin text-white/80" />
-              <div className="flex flex-col gap-1">
-                <h3 className="text-white text-lg font-medium">Submitting claim...</h3>
-                <p className="text-white/40 text-xs">Broadcasting transaction to Stellar network</p>
-              </div>
-            </div>
-          )}
-
-          {/* STATE: SUCCESS */}
-          {claimState === 'success' && (
-            <div className="py-4 flex flex-col items-center justify-center text-center gap-4">
-              <div className="w-14 h-14 rounded-full bg-[#22c55e]/15 flex items-center justify-center text-[#22c55e]">
-                <CheckCircle2 size={32} strokeWidth={1.5} />
-              </div>
-              <div className="flex flex-col gap-1">
-                <h2 className="text-white text-2xl font-medium tracking-tight">
-                  Claimed Successfully
-                </h2>
-                <p className="text-white/60 text-sm">
-                  {displayAmount} has been transferred to your wallet
-                </p>
-              </div>
-
-              <div className="border-t border-white/10 w-full my-3" />
-
-              <div className="w-full flex items-center justify-between liquid-glass rounded-xl px-4 py-3 text-xs">
-                <span className="text-white/40">Tx Hash</span>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-white/80">{truncatedHash}</span>
-                  <button
-                    onClick={handleCopyTx}
-                    className="text-white/50 hover:text-white transition-colors"
-                  >
-                    {copiedTx ? <Check size={14} className="text-[#22c55e]" /> : <Copy size={14} />}
-                  </button>
-                  {explorerUrl && (
-                    <a
-                      href={explorerUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-white/50 hover:text-white transition-colors"
-                    >
-                      <ExternalLink size={14} />
-                    </a>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* STATE: ERROR / ALREADY CLAIMED / EXPIRED */}
-          {(claimState === 'error' || claimState === 'already-claimed' || claimState === 'expired') && (
-            <div className="py-4 flex flex-col items-center justify-center text-center gap-4">
-              <div className="w-14 h-14 rounded-full bg-red-500/10 flex items-center justify-center text-red-400">
-                <XCircle size={32} strokeWidth={1.5} />
-              </div>
-              <div className="flex flex-col gap-1">
-                <h2 className="text-white text-2xl font-medium tracking-tight">
-                  {claimState === 'already-claimed'
-                    ? 'Already Claimed'
-                    : claimState === 'expired'
-                      ? 'Link Expired'
-                      : 'Claim Failed'}
-                </h2>
-                <p className="text-white/60 text-sm">
-                  {claimState === 'already-claimed'
-                    ? 'This payout link has already been claimed.'
-                    : errorMessage || 'This payout link is invalid or has expired.'}
-                </p>
-              </div>
-
-              <div className="border-t border-white/10 w-full my-3" />
-
-              <Link
-                to="/"
-                className="text-white/50 hover:text-white text-xs underline transition-colors"
-              >
-                Return to ReRail
-              </Link>
-            </div>
-          )}
+          <Link to="/" className="text-white/25 hover:text-white/60 text-xs text-center transition-colors">
+            Powered by ReRail
+          </Link>
         </div>
-      </main>
-
-      {/* Footer */}
-      <footer className="w-full text-center py-4">
-        <p className="text-white/20 text-xs">Powered by ReRail</p>
-      </footer>
+      </div>
     </div>
   );
 }

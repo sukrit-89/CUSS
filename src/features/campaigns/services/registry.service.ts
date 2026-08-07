@@ -1,13 +1,17 @@
 import {
   buildActivateRegistryCampaignTx,
+  buildCreateAndRegisterTx,
   buildCreateRegistryCampaignTx,
-  buildRegisterRegistryRecipientTx,
+  buildRegisterRecipientsTx,
   submitRegistryTx,
+  MAX_REGISTRY_BATCH,
+  type RegistryBatchRecipient,
 } from '@/lib/stellar';
 import { CONTRACTS_ENABLED, RERAIL_REGISTRY_CONTRACT_ID } from '@/config/contracts';
 import { USDC_SAC_CONTRACT_ID } from '@/config/stellar';
 import { updateCampaign } from '@/lib/supabase/queries/campaigns';
 import { updateRecipient } from '@/lib/supabase/queries/recipients';
+import { normalizeStellarAmount } from '@/lib/utils/validation';
 
 /** Stroops per unit — Stellar amounts carry 7 decimal places. */
 const STROOPS_PER_UNIT = 10_000_000n;
@@ -34,7 +38,8 @@ export interface RegistryMirrorInput {
 
 /** Converts a decimal string amount to the contract's i128 stroop representation. */
 function toStroops(amount: string): bigint {
-  const [whole, fraction = ''] = amount.trim().split('.');
+  const normalized = normalizeStellarAmount(amount);
+  const [whole, fraction = ''] = normalized.split('.');
   const paddedFraction = (fraction + '0000000').slice(0, 7);
   return BigInt(whole || '0') * STROOPS_PER_UNIT + BigInt(paddedFraction || '0');
 }
@@ -55,8 +60,9 @@ export async function hashClaimToken(token: string): Promise<string> {
  * cosmetic — the payout itself is settled by classic Stellar primitives and
  * must not be blocked by a contract hiccup.
  *
- * Ordering is fixed by the contract: recipients can only be registered while
- * the campaign is Draft, and balances can only be recorded once it is Active.
+ * Recipients are registered in batches. A payout that fits in one batch costs
+ * the organizer a single signature; larger ones cost one per chunk plus one to
+ * activate, rather than one per recipient.
  */
 export class RegistryService {
   static get isEnabled(): boolean {
@@ -74,17 +80,65 @@ export class RegistryService {
       onProgress,
     } = input;
 
-    // ── 1. create_campaign ────────────────────────────────────────────────
-    onProgress?.('Registering campaign on-chain...');
+    // Only recipients with a wallet address can be claimants on chain.
+    const registrable = recipients.filter((recipient) => recipient.wallet_address);
 
-    const createXdr = await buildCreateRegistryCampaignTx(organizerPublicKey, {
-      organizer: organizerPublicKey,
-      name: input.name,
-      assetContractId: USDC_SAC_CONTRACT_ID,
-      defaultAmount: toStroops(input.defaultAmount || '0'),
-      totalPool: toStroops(input.totalPool || '0'),
-      deadline: BigInt(Math.floor(input.deadline.getTime() / 1000)),
-    });
+    if (registrable.length === 0) return null;
+
+    // Hashing is done up front so a failure cannot leave half the batch
+    // registered on chain with no matching hash in Supabase.
+    const entries = await Promise.all(
+      registrable.map(async (recipient) => ({
+        recipient,
+        batch: {
+          recipient: recipient.wallet_address as string,
+          amount: toStroops(recipient.amount || input.defaultAmount || '0'),
+          claimTokenHash: await hashClaimToken(recipient.claim_link_token),
+        } satisfies RegistryBatchRecipient,
+      })),
+    );
+
+    const chunks: (typeof entries)[] = [];
+    for (let i = 0; i < entries.length; i += MAX_REGISTRY_BATCH) {
+      chunks.push(entries.slice(i, i + MAX_REGISTRY_BATCH));
+    }
+
+    // One chunk: a single create_and_register call. Otherwise: create, one call
+    // per chunk, then activate.
+    const totalSignatures = chunks.length === 1 ? 1 : chunks.length + 2;
+    const describe = (index: number) =>
+      `Recording campaign on-chain (signature ${index} of ${totalSignatures})...`;
+
+    // ── 1. Create + register the first chunk in one call ──────────────────
+    onProgress?.(describe(1));
+
+    const [firstChunk, ...restChunks] = chunks;
+
+    // A single-chunk payout is created, registered, and activated by one
+    // invocation. Multi-chunk payouts must stay Draft until every recipient is
+    // registered, so they take the create-then-append path instead.
+    const createXdr =
+      chunks.length === 1
+        ? await buildCreateAndRegisterTx(
+            organizerPublicKey,
+            {
+              organizer: organizerPublicKey,
+              name: input.name,
+              assetContractId: USDC_SAC_CONTRACT_ID,
+              defaultAmount: toStroops(input.defaultAmount || '0'),
+              totalPool: toStroops(input.totalPool || '0'),
+              deadline: BigInt(Math.floor(input.deadline.getTime() / 1000)),
+            },
+            firstChunk.map((entry) => entry.batch),
+          )
+        : await buildCreateRegistryCampaignTx(organizerPublicKey, {
+            organizer: organizerPublicKey,
+            name: input.name,
+            assetContractId: USDC_SAC_CONTRACT_ID,
+            defaultAmount: toStroops(input.defaultAmount || '0'),
+            totalPool: toStroops(input.totalPool || '0'),
+            deadline: BigInt(Math.floor(input.deadline.getTime() / 1000)),
+          });
 
     const created = await submitRegistryTx(await signTransaction(createXdr));
     const registryCampaignId = BigInt(created.returnValue as string | number | bigint);
@@ -95,33 +149,42 @@ export class RegistryService {
       registry_create_tx_hash: created.hash,
     });
 
-    // ── 2. register_recipient, one signature each while still Draft ───────
-    const registrable = recipients.filter((r) => r.wallet_address);
+    const recordChunk = async (chunk: typeof entries, txHash: string) => {
+      await Promise.all(
+        chunk.map((entry) =>
+          updateRecipient(entry.recipient.id, {
+            claim_token_hash: entry.batch.claimTokenHash,
+            registry_status: 'pending',
+            registry_tx_hash: txHash,
+          }),
+        ),
+      );
+    };
 
-    for (const [index, recipient] of registrable.entries()) {
-      onProgress?.(`Registering recipient ${index + 1} of ${registrable.length}...`);
-
-      const claimTokenHash = await hashClaimToken(recipient.claim_link_token);
-
-      const registerXdr = await buildRegisterRegistryRecipientTx(organizerPublicKey, {
-        organizer: organizerPublicKey,
-        campaignId: registryCampaignId,
-        recipient: recipient.wallet_address as string,
-        amount: toStroops(recipient.amount || input.defaultAmount || '0'),
-        claimTokenHash,
-      });
-
-      const registered = await submitRegistryTx(await signTransaction(registerXdr));
-
-      await updateRecipient(recipient.id, {
-        claim_token_hash: claimTokenHash,
-        registry_status: 'pending',
-        registry_tx_hash: registered.hash,
-      });
+    if (chunks.length === 1) {
+      await recordChunk(firstChunk, created.hash);
+      return registryCampaignId;
     }
 
-    // ── 3. activate_campaign — required before balances can be recorded ───
-    onProgress?.('Activating campaign on-chain...');
+    // ── 2. Remaining chunks, one signature each ───────────────────────────
+    const pendingChunks = [firstChunk, ...restChunks];
+
+    for (const [index, chunk] of pendingChunks.entries()) {
+      onProgress?.(describe(index + 2));
+
+      const registerXdr = await buildRegisterRecipientsTx(
+        organizerPublicKey,
+        organizerPublicKey,
+        registryCampaignId,
+        chunk.map((entry) => entry.batch),
+      );
+
+      const registered = await submitRegistryTx(await signTransaction(registerXdr));
+      await recordChunk(chunk, registered.hash);
+    }
+
+    // ── 3. Activate — balances can only be recorded once the campaign is Active
+    onProgress?.(describe(totalSignatures));
 
     const activateXdr = await buildActivateRegistryCampaignTx(
       organizerPublicKey,

@@ -1,7 +1,22 @@
 export interface Database {
   public: {
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      begin_claim: {
+        Args: { p_token: string };
+        Returns: Array<{
+          id: string;
+          campaign_id: string;
+          wallet_address: string | null;
+          claimable_balance_id: string | null;
+          claim_attempts: number;
+        }>;
+      };
+      release_claim: {
+        Args: { p_recipient_id: string };
+        Returns: undefined;
+      };
+    };
     Enums: Record<string, never>;
     Tables: {
       campaigns: {
@@ -71,6 +86,8 @@ export interface Database {
           registry_status: 'pending' | 'funded' | 'claimed' | 'expired' | null;
           registry_tx_hash: string | null;
           status: 'pending' | 'claiming' | 'claimed' | 'expired';
+          claim_attempts: number;
+          last_claim_attempt_at: string | null;
           claimed_at: string | null;
           created_at: string;
         };
@@ -87,6 +104,8 @@ export interface Database {
           registry_status?: 'pending' | 'funded' | 'claimed' | 'expired' | null;
           registry_tx_hash?: string | null;
           status?: 'pending' | 'claiming' | 'claimed' | 'expired';
+          claim_attempts?: number;
+          last_claim_attempt_at?: string | null;
           claimed_at?: string | null;
           created_at?: string;
         };
@@ -103,6 +122,8 @@ export interface Database {
           registry_status?: 'pending' | 'funded' | 'claimed' | 'expired' | null;
           registry_tx_hash?: string | null;
           status?: 'pending' | 'claiming' | 'claimed' | 'expired';
+          claim_attempts?: number;
+          last_claim_attempt_at?: string | null;
           claimed_at?: string | null;
           created_at?: string;
         };

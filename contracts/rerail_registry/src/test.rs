@@ -374,3 +374,222 @@ fn exact_auth_can_create_campaign() {
     assert_eq!(campaign_id, 1);
     assert_eq!(env.auths().len(), 1);
 }
+
+// ── Batch registration ──────────────────────────────────────────────────────
+// One signature per campaign instead of one per recipient is the whole point
+// of these two entry points, so the auth count is asserted alongside state.
+
+/// `seed` must differ between batches that land on the same campaign —
+/// duplicate claim token hashes are rejected by design.
+fn recipient_inputs(
+    env: &Env,
+    count: u8,
+    seed: u8,
+) -> (Vec<RecipientInput>, std::vec::Vec<Address>) {
+    let mut inputs = Vec::new(env);
+    let mut addresses = std::vec::Vec::new();
+
+    for index in 0..count {
+        let recipient = Address::generate(env);
+        addresses.push(recipient.clone());
+        inputs.push_back(RecipientInput {
+            recipient,
+            amount: 100,
+            claim_token_hash: bytes(env, seed + index),
+        });
+    }
+
+    (inputs, addresses)
+}
+
+#[test]
+fn create_and_register_costs_one_signature_and_activates() {
+    let (env, _admin, organizer, _recipient, asset, client) = setup();
+    let (inputs, addresses) = recipient_inputs(&env, MAX_BATCH_RECIPIENTS as u8, 100);
+
+    env.mock_all_auths();
+    let campaign_id = client.create_and_register(
+        &organizer,
+        &String::from_str(&env, "Batch"),
+        &asset,
+        &100,
+        &2_000,
+        &2_000,
+        &inputs,
+    );
+
+    assert_eq!(campaign_id, 1);
+    // 25 recipients, still a single top-level authorization.
+    assert_eq!(env.auths().len(), 1);
+
+    let campaign = client.get_campaign(&campaign_id);
+    assert_eq!(campaign.recipient_count, MAX_BATCH_RECIPIENTS);
+    assert_eq!(campaign.status, CampaignStatus::Active);
+
+    for (index, address) in addresses.iter().enumerate() {
+        let record = client.get_recipient(&campaign_id, address);
+        assert_eq!(record.status, RecipientStatus::Pending);
+        assert_eq!(record.amount, 100);
+        assert!(client.has_claim_token(&campaign_id, &bytes(&env, 100 + index as u8)));
+    }
+}
+
+#[test]
+fn create_and_register_leaves_campaign_claimable_end_to_end() {
+    let (env, _admin, organizer, _recipient, asset, client) = setup();
+    let (inputs, addresses) = recipient_inputs(&env, 2, 100);
+
+    env.mock_all_auths();
+    let campaign_id = client.create_and_register(
+        &organizer,
+        &String::from_str(&env, "Batch"),
+        &asset,
+        &100,
+        &200,
+        &2_000,
+        &inputs,
+    );
+
+    // The batch activates the campaign, so bookkeeping works without a
+    // separate activate_campaign call.
+    for address in &addresses {
+        client.mark_balance_created(&organizer, &campaign_id, address, &bytes(&env, 60));
+        client.record_claim(&organizer, &campaign_id, address, &bytes(&env, 61));
+    }
+
+    let campaign = client.get_campaign(&campaign_id);
+    assert_eq!(campaign.claimed_count, 2);
+    assert_eq!(campaign.status, CampaignStatus::Completed);
+}
+
+#[test]
+fn create_and_register_rejects_empty_and_duplicate_batches() {
+    let (env, _admin, organizer, recipient, asset, client) = setup();
+    env.mock_all_auths();
+
+    let empty = Vec::new(&env);
+    assert!(client
+        .try_create_and_register(
+            &organizer,
+            &String::from_str(&env, "Empty"),
+            &asset,
+            &100,
+            &1_000,
+            &2_000,
+            &empty,
+        )
+        .is_err());
+
+    // Same recipient twice inside one batch.
+    let mut duplicate_recipient = Vec::new(&env);
+    duplicate_recipient.push_back(RecipientInput {
+        recipient: recipient.clone(),
+        amount: 100,
+        claim_token_hash: bytes(&env, 10),
+    });
+    duplicate_recipient.push_back(RecipientInput {
+        recipient: recipient.clone(),
+        amount: 100,
+        claim_token_hash: bytes(&env, 11),
+    });
+
+    assert!(client
+        .try_create_and_register(
+            &organizer,
+            &String::from_str(&env, "Dup recipient"),
+            &asset,
+            &100,
+            &1_000,
+            &2_000,
+            &duplicate_recipient,
+        )
+        .is_err());
+
+    // Same claim token hash twice inside one batch.
+    let other = Address::generate(&env);
+    let mut duplicate_token = Vec::new(&env);
+    duplicate_token.push_back(RecipientInput {
+        recipient: recipient.clone(),
+        amount: 100,
+        claim_token_hash: bytes(&env, 12),
+    });
+    duplicate_token.push_back(RecipientInput {
+        recipient: other,
+        amount: 100,
+        claim_token_hash: bytes(&env, 12),
+    });
+
+    assert!(client
+        .try_create_and_register(
+            &organizer,
+            &String::from_str(&env, "Dup token"),
+            &asset,
+            &100,
+            &1_000,
+            &2_000,
+            &duplicate_token,
+        )
+        .is_err());
+
+    // A rejected batch must not leave a half-written campaign behind.
+    assert_eq!(client.campaign_count(), 0);
+}
+
+#[test]
+fn register_recipients_appends_to_a_draft_campaign() {
+    let (env, _admin, organizer, _recipient, asset, client) = setup();
+    let campaign_id = create_default_campaign(&env, &client, &organizer, &asset);
+    let (first, _) = recipient_inputs(&env, 3, 100);
+    let (second, _) = recipient_inputs(&env, 2, 200);
+
+    assert_eq!(
+        client.register_recipients(&organizer, &campaign_id, &first),
+        3
+    );
+    assert_eq!(
+        client.register_recipients(&organizer, &campaign_id, &second),
+        5
+    );
+    assert_eq!(client.get_campaign(&campaign_id).recipient_count, 5);
+}
+
+#[test]
+fn register_recipients_rejects_empty_non_organizer_and_active_campaign() {
+    let (env, _admin, organizer, _recipient, asset, client) = setup();
+    let campaign_id = create_default_campaign(&env, &client, &organizer, &asset);
+    let other = Address::generate(&env);
+    let (inputs, _) = recipient_inputs(&env, 2, 100);
+
+    let empty = Vec::new(&env);
+    assert!(client
+        .try_register_recipients(&organizer, &campaign_id, &empty)
+        .is_err());
+    assert!(client
+        .try_register_recipients(&other, &campaign_id, &inputs)
+        .is_err());
+
+    client.activate_campaign(&organizer, &campaign_id);
+
+    // Recipients can only be added while the campaign is still Draft.
+    assert!(client
+        .try_register_recipients(&organizer, &campaign_id, &inputs)
+        .is_err());
+}
+
+#[test]
+fn batches_larger_than_one_transaction_are_rejected_with_a_clear_error() {
+    let (env, _admin, organizer, _recipient, asset, client) = setup();
+    let campaign_id = create_default_campaign(&env, &client, &organizer, &asset);
+    let (too_many, _) = recipient_inputs(&env, MAX_BATCH_RECIPIENTS as u8 + 1, 100);
+
+    // Without the explicit cap this surfaces as an opaque host budget panic
+    // instead of an error the wizard can explain.
+    assert_eq!(
+        client
+            .try_register_recipients(&organizer, &campaign_id, &too_many)
+            .err()
+            .unwrap()
+            .unwrap(),
+        Error::BatchTooLarge
+    );
+}

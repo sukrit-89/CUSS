@@ -60,6 +60,8 @@ export default async function handler(req: any, res: any) {
   const server = new Horizon.Server(horizonUrl);
 
   try {
+    // Read-only pre-checks first, so a malformed request never consumes one of
+    // the recipient's attempts.
     const { data: recipient, error } = await supabase
       .from('recipients')
       .select('id, campaign_id, wallet_address, status')
@@ -103,6 +105,25 @@ export default async function handler(req: any, res: any) {
       return res
         .status(400)
         .json({ error: 'Inner transaction source does not match recipient wallet' });
+    }
+
+    // ── Burn one attempt before spending the fee payer's XLM ────────────────
+    // Everything above is free to reject. From here on the request costs real
+    // money, so a leaked link must not be replayable without limit.
+    const { data: lockRows, error: lockError } = await supabase.rpc('begin_gasless_op', {
+      p_token: token,
+      p_kind: 'trustline',
+    });
+
+    if (lockError) {
+      return res.status(500).json({ error: 'Failed to record the trustline attempt' });
+    }
+
+    if (!(Array.isArray(lockRows) ? lockRows[0] : lockRows)) {
+      return res.status(429).json({
+        error:
+          'This link has used all of its trustline attempts. Contact the organizer.',
+      });
     }
 
     const feePayer = Keypair.fromSecret(feePayerSecret);

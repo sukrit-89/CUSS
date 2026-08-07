@@ -59,30 +59,20 @@ export interface RegistryCampaignInput {
   deadline: bigint;
 }
 
-export interface RegistryRecipientInput {
-  organizer: string;
-  campaignId: bigint;
+/** One entry of a batch registration — mirrors the contract's `RecipientInput`. */
+export interface RegistryBatchRecipient {
   recipient: string;
   amount: bigint;
   claimTokenHash: string;
 }
 
-/** `caller` may be the organizer or the registry admin — see the contract's
- *  `require_organizer_or_admin`. */
-export interface RegistryRecipientBalanceInput {
-  caller: string;
-  campaignId: bigint;
-  recipient: string;
-  balanceIdHash: string;
-}
-
-/** `caller` may be the organizer or the registry admin. */
-export interface RegistryClaimInput {
-  caller: string;
-  campaignId: bigint;
-  recipient: string;
-  txHash: string;
-}
+/**
+ * Most recipients one registry call can take.
+ *
+ * Must stay in sync with `MAX_BATCH_RECIPIENTS` in the contract. Each recipient
+ * costs two write ledger entries against a network cap of 50 per transaction.
+ */
+export const MAX_REGISTRY_BATCH = 20;
 
 function requireRegistryContractId(contractId = RERAIL_REGISTRY_CONTRACT_ID): string {
   if (!contractId) {
@@ -91,11 +81,30 @@ function requireRegistryContractId(contractId = RERAIL_REGISTRY_CONTRACT_ID): st
   return contractId;
 }
 
+/**
+ * Decodes a hex string to bytes.
+ *
+ * `Buffer` is a Node global. Vite does not polyfill it, so using it here would
+ * throw `Buffer is not defined` in the browser the first time a registry call
+ * is made.
+ */
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+
+  for (let i = 0; i < bytes.length; i += 1) {
+    bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+
+  return bytes;
+}
+
 function hashToScVal(hex: string): xdr.ScVal {
   if (!/^[0-9a-f]{64}$/i.test(hex)) {
     throw new Error('Expected a 32-byte hex hash.');
   }
-  return xdr.ScVal.scvBytes(Buffer.from(hex, 'hex'));
+  // `scvBytes` is typed against Node's Buffer; `nativeToScVal` takes a plain
+  // Uint8Array and produces the same ScVal.
+  return nativeToScVal(hexToBytes(hex), { type: 'bytes' });
 }
 
 /**
@@ -185,25 +194,6 @@ export async function buildCreateRegistryCampaignTx(
   );
 }
 
-export async function buildRegisterRegistryRecipientTx(
-  sourcePublicKey: string,
-  input: RegistryRecipientInput,
-  contractId?: string,
-): Promise<string> {
-  return buildRegistryCallTx(
-    sourcePublicKey,
-    'register_recipient',
-    [
-      new Address(input.organizer).toScVal(),
-      nativeToScVal(input.campaignId, { type: 'u64' }),
-      new Address(input.recipient).toScVal(),
-      nativeToScVal(input.amount, { type: 'i128' }),
-      hashToScVal(input.claimTokenHash),
-    ],
-    contractId,
-  );
-}
-
 export async function buildActivateRegistryCampaignTx(
   sourcePublicKey: string,
   organizer: string,
@@ -221,37 +211,80 @@ export async function buildActivateRegistryCampaignTx(
   );
 }
 
-export async function buildMarkRegistryBalanceCreatedTx(
+/** Encodes a batch entry as the contract's `RecipientInput` struct. */
+function recipientInputScVal(entry: RegistryBatchRecipient): xdr.ScVal {
+  return xdr.ScVal.scvMap([
+    new xdr.ScMapEntry({
+      key: nativeToScVal('amount', { type: 'symbol' }),
+      val: nativeToScVal(entry.amount, { type: 'i128' }),
+    }),
+    new xdr.ScMapEntry({
+      key: nativeToScVal('claim_token_hash', { type: 'symbol' }),
+      val: hashToScVal(entry.claimTokenHash),
+    }),
+    new xdr.ScMapEntry({
+      key: nativeToScVal('recipient', { type: 'symbol' }),
+      val: new Address(entry.recipient).toScVal(),
+    }),
+  ]);
+}
+
+function assertBatchSize(recipients: RegistryBatchRecipient[]): void {
+  if (recipients.length === 0) {
+    throw new Error('A registry batch needs at least one recipient.');
+  }
+  if (recipients.length > MAX_REGISTRY_BATCH) {
+    throw new Error(
+      `A registry batch holds at most ${MAX_REGISTRY_BATCH} recipients; split larger payouts.`,
+    );
+  }
+}
+
+/**
+ * Creates the campaign, registers up to `MAX_REGISTRY_BATCH` recipients, and
+ * activates it — one organizer signature for the whole mirror.
+ */
+export async function buildCreateAndRegisterTx(
   sourcePublicKey: string,
-  input: RegistryRecipientBalanceInput,
+  input: RegistryCampaignInput,
+  recipients: RegistryBatchRecipient[],
   contractId?: string,
 ): Promise<string> {
+  assertBatchSize(recipients);
+
   return buildRegistryCallTx(
     sourcePublicKey,
-    'mark_balance_created',
+    'create_and_register',
     [
-      new Address(input.caller).toScVal(),
-      nativeToScVal(input.campaignId, { type: 'u64' }),
-      new Address(input.recipient).toScVal(),
-      hashToScVal(input.balanceIdHash),
+      new Address(input.organizer).toScVal(),
+      nativeToScVal(input.name, { type: 'string' }),
+      new Address(input.assetContractId).toScVal(),
+      nativeToScVal(input.defaultAmount, { type: 'i128' }),
+      nativeToScVal(input.totalPool, { type: 'i128' }),
+      nativeToScVal(input.deadline, { type: 'u64' }),
+      xdr.ScVal.scvVec(recipients.map(recipientInputScVal)),
     ],
     contractId,
   );
 }
 
-export async function buildRecordRegistryClaimTx(
+/** Appends a chunk of recipients to a campaign that is still Draft. */
+export async function buildRegisterRecipientsTx(
   sourcePublicKey: string,
-  input: RegistryClaimInput,
+  organizer: string,
+  campaignId: bigint,
+  recipients: RegistryBatchRecipient[],
   contractId?: string,
 ): Promise<string> {
+  assertBatchSize(recipients);
+
   return buildRegistryCallTx(
     sourcePublicKey,
-    'record_claim',
+    'register_recipients',
     [
-      new Address(input.caller).toScVal(),
-      nativeToScVal(input.campaignId, { type: 'u64' }),
-      new Address(input.recipient).toScVal(),
-      hashToScVal(input.txHash),
+      new Address(organizer).toScVal(),
+      nativeToScVal(campaignId, { type: 'u64' }),
+      xdr.ScVal.scvVec(recipients.map(recipientInputScVal)),
     ],
     contractId,
   );

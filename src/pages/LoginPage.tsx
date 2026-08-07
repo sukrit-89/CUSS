@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Infinity as InfinityIcon, Loader2 } from 'lucide-react';
+import { Zap, Loader2 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
+import { PUBLIC_BG_VIDEO } from '@/config/constants';
 
 export function LoginPage() {
   const [authError, setAuthError] = useState<string | null>(null);
@@ -32,22 +33,35 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#0a0a0a] text-white flex flex-col justify-between items-center p-4 relative">
-      <header className="w-full max-w-sm flex justify-start py-4">
+    <div className="min-h-screen w-full text-white flex flex-col justify-between items-center p-4 relative overflow-hidden">
+      <video
+        className="absolute inset-0 w-full h-full object-cover"
+        autoPlay
+        muted
+        loop
+        playsInline
+        src={PUBLIC_BG_VIDEO}
+      />
+      <div className="absolute inset-0 bg-black/30 pointer-events-none" />
+
+      <header className="relative z-10 w-full max-w-sm flex justify-start py-4">
         <Link to="/" className="text-white/40 hover:text-white text-xs transition-colors">
           ← Back
         </Link>
       </header>
 
-      <main className="w-full max-w-sm my-auto">
+      <main className="relative z-10 w-full max-w-sm my-auto">
         <div className="liquid-glass rounded-2xl p-8 flex flex-col gap-6">
           {/* Logo Mark */}
           <div className="flex flex-col items-center gap-2 text-center">
             <div className="flex items-center gap-2 text-white font-medium text-xl">
-              <InfinityIcon size={28} strokeWidth={1.5} />
+              <Zap size={28} strokeWidth={1.5} />
               <span>ReRail</span>
             </div>
-            <p className="text-white/40 text-xs">Gasless USDC Payout Infrastructure</p>
+            <h2 className="text-white text-lg font-medium">Start distributing</h2>
+            <p className="text-white/40 text-xs">
+              Connect your Google account to manage campaigns
+            </p>
           </div>
 
           {/* Testnet Banner */}
@@ -87,12 +101,12 @@ export function LoginPage() {
           </button>
 
           <p className="text-white/30 text-xs text-center">
-            No password required. Instant wallet setup & payout access.
+            No credit card required · Testnet only
           </p>
         </div>
       </main>
 
-      <footer className="py-4 text-center text-white/20 text-xs">
+      <footer className="relative z-10 py-4 text-center text-white/20 text-xs">
         © ReRail Infrastructure Inc.
       </footer>
     </div>

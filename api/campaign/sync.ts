@@ -56,17 +56,41 @@ export default async function handler(req: any, res: any) {
     return res.status(500).json({ error: 'Server configuration error' });
   }
 
-  const supabase = createClient(supabaseUrl, supabaseKey);
+  // The route writes with the service role key, which bypasses RLS. Without a
+  // verified caller anyone could point any transaction hash at any campaign.
+  const accessToken = String(req.headers?.authorization || '').replace(/^Bearer\s+/i, '');
+
+  if (!accessToken) {
+    return res.status(401).json({ error: 'Authorization bearer token is required' });
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseKey, {
+    global: {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  });
+
+  const { data: userData, error: userError } = await supabase.auth.getUser(accessToken);
+
+  if (userError || !userData?.user) {
+    return res.status(401).json({ error: 'Invalid or expired session' });
+  }
 
   try {
     const { data: campaign, error: campaignError } = await supabase
       .from('campaigns')
-      .select('id, treasury_address, registry_campaign_id')
+      .select('id, organizer_id, treasury_address, registry_campaign_id')
       .eq('id', campaignId)
       .single();
 
     if (campaignError || !campaign) {
       return res.status(404).json({ error: 'Campaign not found' });
+    }
+
+    if (campaign.organizer_id !== userData.user.id) {
+      return res.status(403).json({ error: 'You do not own this campaign' });
     }
 
     // ── Fetch the transaction so we know who created the balances ───────────

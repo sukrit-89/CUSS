@@ -38,14 +38,40 @@ export default async function handler(req: any, res: any) {
       return res.status(404).json({ error: 'Claim not found' });
     }
 
-    if (recipient.status === 'claimed') {
-      return res.status(410).json({ error: 'Already claimed' });
-    }
-
     const campaign = firstJoinedRow(recipient.campaigns);
 
+    if (recipient.status === 'claimed') {
+      // The recipient still deserves proof: when it happened and the tx that
+      // moved the funds, so they can verify it on an explorer themselves.
+      const { data: claimTx } = await supabase
+        .from('transactions')
+        .select('tx_hash, created_at')
+        .eq('recipient_id', recipient.id)
+        .eq('tx_type', 'claim')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      return res.status(410).json({
+        error: 'Already claimed',
+        status: 'claimed',
+        amount: recipient.amount ?? campaign?.amount_per_recipient,
+        asset_code: campaign?.token,
+        campaign_name: campaign?.name,
+        claimed_at: recipient.claimed_at,
+        tx_hash: claimTx?.tx_hash ?? null,
+      });
+    }
+
     if (campaign?.deadline && new Date() > new Date(campaign.deadline)) {
-      return res.status(410).json({ error: 'Claim expired' });
+      return res.status(410).json({
+        error: 'Claim expired',
+        status: 'expired',
+        amount: recipient.amount ?? campaign?.amount_per_recipient,
+        asset_code: campaign?.token,
+        campaign_name: campaign?.name,
+        deadline: campaign?.deadline,
+      });
     }
 
     return res.status(200).json({

@@ -31,6 +31,29 @@ export async function getRecipientsByCampaign(campaignId: string): Promise<Recip
 }
 
 /**
+ * Gets recipients for several campaigns in one round trip.
+ *
+ * The dashboard needs cross-campaign aggregates, and issuing one request per
+ * campaign does not scale past a handful of rows.
+ */
+export async function getRecipientsForCampaigns(
+  campaignIds: string[],
+): Promise<RecipientRow[]> {
+  if (campaignIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from('recipients')
+    .select('*')
+    .in('campaign_id', campaignIds);
+
+  if (error) {
+    throw new Error(`Failed to fetch recipients: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+/**
  * Gets a recipient by their unique claim link token.
  * @param token The claim link token
  */

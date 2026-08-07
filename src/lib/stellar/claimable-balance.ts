@@ -17,6 +17,7 @@ import {
   organizerReclaimPredicate,
   unconditionalPredicate,
 } from '@/lib/stellar/predicates';
+import { normalizeStellarAmount } from '@/lib/utils/validation';
 
 /** Input for a single claimable balance in a batch */
 export interface CreateClaimableBalanceInput {
@@ -53,6 +54,7 @@ export async function buildCreateClaimableBalanceTx(
     }).setTimeout(TX_TIMEOUT_SECONDS);
 
     for (const input of batch) {
+      const amount = normalizeStellarAmount(input.amount);
       let recipPred: xdr.ClaimPredicate;
       let organizerPred: xdr.ClaimPredicate | undefined;
 
@@ -72,7 +74,7 @@ export async function buildCreateClaimableBalanceTx(
       builder.addOperation(
         Operation.createClaimableBalance({
           asset,
-          amount: input.amount,
+          amount,
           claimants,
         }),
       );

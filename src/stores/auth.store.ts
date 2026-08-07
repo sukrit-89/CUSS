@@ -4,6 +4,7 @@ import { AuthService } from '@/features/auth/services/auth.service';
 
 interface AuthState {
   user: User | null;
+  accessToken: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   setUser: (user: User | null) => void;
@@ -14,6 +15,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
+  accessToken: null,
   isLoading: true,
   isAuthenticated: false,
 
@@ -28,10 +30,13 @@ export const useAuthStore = create<AuthState>((set) => ({
         const newUser = session
           ? (session as { user?: User }).user ?? null
           : null;
-        set({ user: newUser, isAuthenticated: !!newUser });
+        const accessToken = session
+          ? (session as { access_token?: string }).access_token ?? null
+          : null;
+        set({ user: newUser, accessToken, isAuthenticated: !!newUser });
       });
     } catch {
-      set({ user: null, isAuthenticated: false, isLoading: false });
+      set({ user: null, accessToken: null, isAuthenticated: false, isLoading: false });
     }
   },
 
@@ -41,6 +46,6 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   signOut: async () => {
     await AuthService.signOut();
-    set({ user: null, isAuthenticated: false });
+    set({ user: null, accessToken: null, isAuthenticated: false });
   },
 }));

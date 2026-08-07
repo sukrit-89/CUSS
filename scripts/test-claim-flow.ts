@@ -1,8 +1,11 @@
 import { Keypair, Asset, TransactionBuilder, Operation, Networks, Horizon, Claimant } from '@stellar/stellar-sdk';
 
-const HORIZON_URL = 'https://horizon-testnet.stellar.org';
-const NETWORK_PASSPHRASE = Networks.TESTNET;
-const USDC_ASSET = new Asset('USDC', 'GBBD47IF6LWK7P7MDEVSCWR7DPUUB3MACJUJWSBWPPEUBIGMACUWUPP6');
+const HORIZON_URL = process.env.STELLAR_HORIZON_URL ?? 'https://horizon-testnet.stellar.org';
+const NETWORK_PASSPHRASE = process.env.STELLAR_NETWORK_PASSPHRASE ?? Networks.TESTNET;
+const USDC_ASSET = new Asset(
+  process.env.STELLAR_USDC_CODE ?? 'USDC',
+  process.env.STELLAR_USDC_ISSUER ?? 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+);
 const BASE_FEE = '1000';
 
 async function fundAccount(publicKey: string): Promise<boolean> {

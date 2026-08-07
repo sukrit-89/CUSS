@@ -1,239 +1,211 @@
-import { useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { Sidebar } from '../components/Sidebar';
-import { RecipientsTable, type Recipient } from '../components/RecipientsTable';
-import { Plus, ArrowUpRight, Loader2 } from 'lucide-react';
-import { useCampaignStore } from '@/stores/campaign.store';
-import { CLAIM_LINK_BASE_URL } from '@/config/constants';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ExternalLink, Loader2, Plus } from 'lucide-react';
+import { Sidebar } from '@/components/Sidebar';
+import { StatusBadge } from '@/components/StatusBadge';
+import { getCampaigns } from '@/lib/supabase/queries/campaigns';
+import { getRecipientsForCampaigns } from '@/lib/supabase/queries/recipients';
+import { CIRCLE_FAUCET_URL } from '@/config/constants';
+import { getPrice } from '@/lib/defi/reflector';
+import type { Database } from '@/lib/supabase/database.types';
+
+type Campaign = Database['public']['Tables']['campaigns']['Row'];
+type Recipient = Database['public']['Tables']['recipients']['Row'];
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+function amountOf(recipient: Recipient, campaign: Campaign | undefined) {
+  return parseFloat(recipient.amount ?? campaign?.amount_per_recipient ?? '0') || 0;
+}
+
+function deadlineLabel(deadline: string | null) {
+  if (!deadline) return 'No deadline';
+  const days = Math.ceil((new Date(deadline).getTime() - Date.now()) / 86_400_000);
+  if (days < 0) return 'Expired';
+  if (days === 0) return 'Ends today';
+  return `${days} day${days === 1 ? '' : 's'} left`;
+}
 
 export function DashboardPage() {
-  const {
-    campaigns,
-    recipients,
-    activeCampaign,
-    isLoading,
-    error,
-    fetchCampaigns,
-    selectCampaign,
-  } = useCampaignStore();
+  const navigate = useNavigate();
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [recipients, setRecipients] = useState<Recipient[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [usdcPrice, setUsdcPrice] = useState<number | null>(null);
 
-  // ── Fetch campaigns on mount ─────────────────────────────────────────────
   useEffect(() => {
-    fetchCampaigns();
-  }, [fetchCampaigns]);
+    (async () => {
+      try {
+        const campaignRows = await getCampaigns();
+        setCampaigns(campaignRows);
+        setRecipients(await getRecipientsForCampaigns(campaignRows.map((c) => c.id)));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load dashboard.');
+      } finally {
+        setIsLoading(false);
+      }
+    })();
 
-  // ── Auto-select first campaign when campaigns load ───────────────────────
-  useEffect(() => {
-    if (campaigns.length > 0 && !activeCampaign) {
-      selectCampaign(campaigns[0].id);
-    }
-  }, [campaigns, activeCampaign, selectCampaign]);
+    getPrice().then(setUsdcPrice);
+  }, []);
 
-  // ── Compute stats from real recipient data ───────────────────────────────
+  const campaignById = useMemo(
+    () => new Map(campaigns.map((campaign) => [campaign.id, campaign])),
+    [campaigns],
+  );
+
   const stats = useMemo(() => {
-    const totalRecipients = recipients.length;
-    let claimedCount = 0;
-    let pendingCount = 0;
-    let expiredCount = 0;
     let totalDistributed = 0;
+    let pendingClaims = 0;
+    let claimedThisWeek = 0;
 
-    for (const r of recipients) {
-      const amount = parseFloat(
-        (r as any).amount ?? activeCampaign?.amount_per_recipient ?? '0'
-      );
+    for (const recipient of recipients) {
+      const campaign = campaignById.get(recipient.campaign_id);
 
-      if (r.status === 'claimed') {
-        claimedCount++;
-        totalDistributed += amount;
-      } else if (r.status === 'expired') {
-        expiredCount++;
-      } else {
-        pendingCount++;
+      if (recipient.status === 'claimed') {
+        totalDistributed += amountOf(recipient, campaign);
+        if (recipient.claimed_at && Date.now() - new Date(recipient.claimed_at).getTime() < WEEK_MS) {
+          claimedThisWeek += 1;
+        }
+      } else if (recipient.status !== 'expired') {
+        pendingClaims += 1;
       }
     }
 
-    const claimRate = totalRecipients > 0
-      ? ((claimedCount / totalRecipients) * 100).toFixed(1)
-      : '0.0';
-
     return {
-      totalDistributed: totalDistributed.toLocaleString('en-US', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }),
-      activeLinks: pendingCount,
-      claimRate,
-      totalRecipients,
-      pendingCount,
+      totalDistributed,
+      activeCampaigns: campaigns.filter((c) => c.status === 'active').length,
+      pendingClaims,
+      claimedThisWeek,
     };
-  }, [recipients, activeCampaign]);
+  }, [recipients, campaigns, campaignById]);
 
-  // ── Map Supabase recipients to RecipientsTable display format ────────────
-  const displayRecipients: Recipient[] = useMemo(() => {
-    return recipients.map((r: any) => {
-      const walletAddr = r.wallet_address || '—';
-      const truncatedWallet = walletAddr.length > 12
-        ? `${walletAddr.slice(0, 4)}...${walletAddr.slice(-4)}`
-        : walletAddr;
+  const perCampaign = useMemo(
+    () =>
+      campaigns.map((campaign) => {
+        const rows = recipients.filter((r) => r.campaign_id === campaign.id);
+        const claimed = rows.filter((r) => r.status === 'claimed').length;
+        return { campaign, total: rows.length, claimed };
+      }),
+    [campaigns, recipients],
+  );
 
-      const amount = r.amount ?? activeCampaign?.amount_per_recipient ?? '0';
-
-      return {
-        id: r.id,
-        recipient: truncatedWallet,
-        amount: `${parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: 2 })} USDC`,
-        status: r.status === 'claimed' ? 'Claimed' : r.status === 'expired' ? 'Expired' : 'Pending',
-        claimedOn: r.claimed_at
-          ? new Date(r.claimed_at).toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric',
-            })
-          : '—',
-        claimUrl: r.claim_link_token
-          ? `${CLAIM_LINK_BASE_URL}/claim/${r.claim_link_token}`
-          : undefined,
-      } satisfies Recipient;
-    });
-  }, [recipients, activeCampaign]);
+  const statCards = [
+    {
+      label: 'Total Distributed',
+      value: stats.totalDistributed.toLocaleString('en-US', { minimumFractionDigits: 2 }),
+      sub:
+        usdcPrice !== null
+          ? `≈ $${(stats.totalDistributed * usdcPrice).toFixed(2)} via Reflector`
+          : 'USDC claimed by recipients',
+    },
+    {
+      label: 'Active Campaigns',
+      value: String(stats.activeCampaigns),
+      sub: `${campaigns.length} total`,
+    },
+    { label: 'Pending Claims', value: String(stats.pendingClaims), sub: 'Links not yet claimed' },
+    { label: 'Claimed This Week', value: String(stats.claimedThisWeek), sub: 'Last 7 days' },
+  ];
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white flex">
-      {/* Persistent Sidebar */}
+    <div className="min-h-screen bg-[#080808] text-white flex">
       <Sidebar />
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Bar */}
-        <header className="h-16 px-6 sm:px-8 border-b border-white/10 flex items-center justify-between gap-4 sticky top-0 bg-[#0a0a0a]/90 backdrop-blur-md z-10">
+      <div className="flex-1 min-w-0 flex flex-col">
+        <header className="h-16 px-6 sm:px-8 liquid-glass border-b border-white/5 flex items-center justify-between sticky top-0 z-10">
           <div className="flex items-center gap-3">
-            <h1 className="text-white font-medium text-lg">
-              {activeCampaign?.name || 'Dashboard'}
-            </h1>
+            <h1 className="text-white font-medium text-lg">Dashboard</h1>
             <span className="liquid-glass rounded-full px-2.5 py-0.5 text-xs text-white/50">
               Stellar Testnet
             </span>
           </div>
-
           <Link
-            to="/payouts/new"
+            to="/campaigns/new"
             className="bg-white text-black font-medium text-sm rounded-full px-4 py-2 hover:bg-white/90 transition-colors flex items-center gap-1.5"
           >
-            <Plus size={16} strokeWidth={1.5} />
-            <span>New Payout</span>
+            <Plus size={16} strokeWidth={1.5} /> New Campaign
           </Link>
         </header>
 
-        {/* Dashboard Body */}
         <main className="p-6 sm:p-8 flex flex-col gap-8 max-w-7xl">
-          {/* Loading State */}
-          {isLoading && recipients.length === 0 && (
-            <div className="flex items-center justify-center py-20">
-              <Loader2 size={32} strokeWidth={1.5} className="animate-spin text-white/40" />
+          {isLoading && (
+            <div className="flex justify-center py-20 text-white/40">
+              <Loader2 size={32} className="animate-spin" />
             </div>
           )}
 
-          {/* Error State */}
-          {error && (
-            <div className="liquid-glass rounded-2xl p-6 text-center">
-              <p className="text-red-400 text-sm">{error}</p>
+          {!isLoading && error && (
+            <div className="liquid-glass rounded-2xl p-6 text-center text-red-300 text-sm">
+              {error}
             </div>
           )}
 
-          {/* Empty State */}
-          {!isLoading && campaigns.length === 0 && !error && (
-            <div className="liquid-glass rounded-2xl p-12 text-center flex flex-col items-center gap-4">
-              <p className="text-white/40 text-sm">No campaigns yet. Create your first payout to get started.</p>
-              <Link
-                to="/payouts/new"
-                className="bg-white text-black font-medium text-sm rounded-full px-6 py-2.5 hover:bg-white/90 transition-colors flex items-center gap-1.5"
-              >
-                <Plus size={16} strokeWidth={1.5} />
-                <span>Create Payout</span>
-              </Link>
-            </div>
-          )}
-
-          {/* Stat Cards Row */}
-          {(campaigns.length > 0 || recipients.length > 0) && (
+          {!isLoading && !error && (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="liquid-glass rounded-2xl p-6 flex flex-col justify-between gap-2">
-                  <span className="text-white/40 text-xs uppercase tracking-wide font-medium">
-                    Total Distributed
-                  </span>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-white text-3xl sm:text-4xl font-medium tracking-tight">
-                      {stats.totalDistributed}
+              <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                {statCards.map((card) => (
+                  <div key={card.label} className="liquid-glass rounded-2xl p-5 flex flex-col gap-2">
+                    <span className="text-white/40 text-xs uppercase tracking-wide">
+                      {card.label}
                     </span>
-                    <span className="text-white/60 text-sm font-medium">USDC</span>
+                    <span className="text-white text-2xl font-medium font-mono">{card.value}</span>
+                    <span className="text-white/30 text-xs">{card.sub}</span>
                   </div>
-                  <span className="text-white/40 text-xs mt-1">
-                    {stats.totalRecipients} total recipients
-                  </span>
-                </div>
+                ))}
+              </section>
 
-                <div className="liquid-glass rounded-2xl p-6 flex flex-col justify-between gap-2">
-                  <span className="text-white/40 text-xs uppercase tracking-wide font-medium">
-                    Active Claim Links
-                  </span>
-                  <span className="text-white text-3xl sm:text-4xl font-medium tracking-tight">
-                    {stats.activeLinks}
-                  </span>
-                  <span className="text-white/40 text-xs mt-1">
-                    {stats.pendingCount} pending recipient claims
-                  </span>
-                </div>
+              <a
+                href={CIRCLE_FAUCET_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="liquid-glass rounded-xl px-4 py-3 text-xs text-white/50 hover:text-white flex items-center gap-2 self-start transition-colors"
+              >
+                💡 Need testnet USDC? Get it free from Circle&apos;s faucet
+                <ExternalLink size={12} />
+              </a>
 
-                <div className="liquid-glass rounded-2xl p-6 flex flex-col justify-between gap-2">
-                  <span className="text-white/40 text-xs uppercase tracking-wide font-medium">
-                    Claim Rate
-                  </span>
-                  <span className="text-white text-3xl sm:text-4xl font-medium tracking-tight">
-                    {stats.claimRate}%
-                  </span>
-                  <span className="text-white/40 text-xs mt-1">
-                    Across all campaigns
-                  </span>
+              {campaigns.length === 0 ? (
+                <div className="liquid-glass rounded-2xl p-8 text-center flex flex-col items-center gap-4">
+                  <p className="text-white/40 text-sm">
+                    No campaigns yet. Create your first payout to get started.
+                  </p>
+                  <Link
+                    to="/campaigns/new"
+                    className="bg-white text-black font-medium text-sm rounded-full px-6 py-2.5 hover:bg-white/90 transition-colors"
+                  >
+                    Start distributing
+                  </Link>
                 </div>
-              </div>
-
-              {/* Campaign Selector (if multiple) */}
-              {campaigns.length > 1 && (
-                <div className="flex gap-2 flex-wrap">
-                  {campaigns.map((c) => (
+              ) : (
+                <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {perCampaign.map(({ campaign, total, claimed }) => (
                     <button
-                      key={c.id}
-                      onClick={() => selectCampaign(c.id)}
-                      className={`px-4 py-2 rounded-full text-xs font-medium transition-colors ${
-                        activeCampaign?.id === c.id
-                          ? 'bg-white/15 text-white'
-                          : 'liquid-glass text-white/50 hover:text-white'
-                      }`}
+                      key={campaign.id}
+                      onClick={() => navigate(`/campaigns/${campaign.id}`)}
+                      className="liquid-glass rounded-2xl p-5 hover:bg-white/5 transition-colors cursor-pointer text-left flex flex-col gap-4"
                     >
-                      {c.name}
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-white font-medium">{campaign.name}</span>
+                        <StatusBadge status={campaign.status} />
+                      </div>
+                      <div className="bg-white/10 rounded-full h-1 overflow-hidden">
+                        <div
+                          className="bg-white h-full"
+                          style={{ width: `${total ? (claimed / total) * 100 : 0}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-white/40 text-xs">
+                        <span>
+                          {claimed}/{total} claimed
+                        </span>
+                        <span>{deadlineLabel(campaign.deadline)}</span>
+                      </div>
                     </button>
                   ))}
-                </div>
+                </section>
               )}
-
-              {/* Recent Payouts Section */}
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-white/70 text-sm font-medium">
-                    Recipients{activeCampaign ? ` — ${activeCampaign.name}` : ''}
-                  </h2>
-                  {displayRecipients.length > 5 && (
-                    <span className="text-white/40 text-xs flex items-center gap-1">
-                      <span>Showing {Math.min(displayRecipients.length, 20)} of {displayRecipients.length}</span>
-                      <ArrowUpRight size={12} />
-                    </span>
-                  )}
-                </div>
-
-                {/* Reusable Recipients Table */}
-                <RecipientsTable data={displayRecipients} limit={20} />
-              </div>
             </>
           )}
         </main>

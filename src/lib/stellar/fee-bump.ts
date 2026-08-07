@@ -1,30 +1,6 @@
-import { Keypair, TransactionBuilder, Transaction, Operation } from '@stellar/stellar-sdk';
-import { BASE_FEE, FEE_BUMP_MULTIPLIER, NETWORK_PASSPHRASE, TX_TIMEOUT_SECONDS } from '@/config/constants';
+import { TransactionBuilder, Operation } from '@stellar/stellar-sdk';
+import { BASE_FEE, NETWORK_PASSPHRASE, TX_TIMEOUT_SECONDS } from '@/config/constants';
 import { getHorizonServer } from '@/lib/stellar/client';
-
-/**
- * Wraps a signed inner transaction in a fee bump and signs with fee payer.
- * @param innerTxXdr The base64 XDR of the signed inner transaction.
- * @param feePayerSecret The secret key of the fee payer.
- * @returns The signed fee bump transaction XDR.
- */
-export function buildFeeBumpTransaction(innerTxXdr: string, feePayerSecret: string): string {
-  const innerTx = new Transaction(innerTxXdr, NETWORK_PASSPHRASE);
-  const feePayerKeypair = Keypair.fromSecret(feePayerSecret);
-  
-  const baseFee = innerTx.operations.length * parseInt(BASE_FEE) * FEE_BUMP_MULTIPLIER;
-  
-  const feeBumpTx = TransactionBuilder.buildFeeBumpTransaction(
-    feePayerKeypair,
-    baseFee.toString(),
-    innerTx,
-    NETWORK_PASSPHRASE
-  );
-  
-  feeBumpTx.sign(feePayerKeypair);
-  
-  return feeBumpTx.toXDR();
-}
 
 /**
  * Builds the inner claimClaimableBalance transaction for a recipient.

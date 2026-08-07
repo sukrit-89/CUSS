@@ -2,21 +2,19 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ChevronDown,
-  Infinity as InfinityIcon,
+  Zap,
   Menu,
   X,
   ArrowRight,
-  Zap,
   Link as LinkIcon,
   ShieldCheck,
 } from 'lucide-react';
 
-const BG_VIDEO = '/lv_0_20260723125159.mp4';
+import { PUBLIC_BG_VIDEO as BG_VIDEO } from '@/config/constants';
 
 const navLinks = [
   { label: 'Home', active: true, path: '/' },
-  { label: 'Features', dropdown: true, path: '#features' },
-  { label: 'Claim Demo', path: '/claim/demo' },
+  { label: 'How it Works', dropdown: true, path: '#features' },
   { label: 'Dashboard', path: '/dashboard' },
 ];
 
@@ -24,11 +22,11 @@ export function HeroPage() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col">
+    <div className="min-h-screen bg-[#080808] text-white flex flex-col">
       {/* ---------------------------------------------------- */}
       {/* HERO SECTION WITH VIDEO BACKGROUND                   */}
       {/* ---------------------------------------------------- */}
-      <section className="relative w-full h-screen overflow-hidden bg-[#0a0a0a] flex flex-col justify-between">
+      <section className="relative w-full h-screen overflow-hidden bg-[#080808] flex flex-col justify-between">
         {/* Background Video */}
         <video
           className="absolute inset-0 w-full h-full object-cover"
@@ -46,7 +44,7 @@ export function HeroPage() {
         <nav className="relative z-20 w-full max-w-7xl mx-auto px-6 sm:px-12 py-5 flex items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 text-white font-medium text-base">
-            <InfinityIcon size={22} strokeWidth={1.5} />
+            <Zap size={22} strokeWidth={1.5} />
             <span>ReRail</span>
           </Link>
 
@@ -149,25 +147,26 @@ export function HeroPage() {
         <div className="relative z-20 w-full max-w-7xl mx-auto px-6 sm:px-12 pb-10 sm:pb-16 mt-auto">
           <div className="max-w-2xl">
             <h1 className="text-white text-4xl sm:text-5xl lg:text-6xl font-medium leading-tight tracking-tight mb-4">
-              Gasless USDC Payouts on Stellar.
+              Set up a grant. Send a link. Get paid.
             </h1>
             <p className="text-white/60 text-sm leading-relaxed mb-7 max-w-md">
-              Take charge of bulk payouts with zero gas friction for your recipients—create claim links, automate distribution, and track live payouts across your organization.
+              Gasless USDC payouts via shareable claim links. No XLM. No wallet friction. Every
+              distribution is on-chain and auditable.
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <Link
-                to="/payouts/new"
+                to="/campaigns/new"
                 className="bg-white text-black text-sm sm:text-base font-medium px-6 sm:px-7 py-3 rounded-full hover:bg-white/90 transition-colors flex items-center gap-2"
               >
-                <span>Start Today</span>
+                <span>Start distributing</span>
                 <ArrowRight size={16} strokeWidth={1.5} />
               </Link>
-              <Link
-                to="/claim/demo"
+              <a
+                href="#features"
                 className="liquid-glass text-white text-sm sm:text-base font-medium px-6 sm:px-7 py-3 rounded-full hover:bg-white/5 transition-colors"
               >
-                Claim Demo
-              </Link>
+                See how it works
+              </a>
             </div>
           </div>
         </div>
@@ -176,7 +175,7 @@ export function HeroPage() {
       {/* ---------------------------------------------------- */}
       {/* 01 — TRUST / STAT BAND                               */}
       {/* ---------------------------------------------------- */}
-      <section className="bg-[#0a0a0a] border-b border-white/5">
+      <section className="bg-[#080808] border-b border-white/5">
         <div className="max-w-7xl mx-auto px-6 sm:px-12 py-20">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
             <div>
@@ -221,7 +220,7 @@ export function HeroPage() {
       {/* ---------------------------------------------------- */}
       {/* 02 — FEATURES GRID                                   */}
       {/* ---------------------------------------------------- */}
-      <section id="features" className="bg-[#0a0a0a]">
+      <section id="features" className="bg-[#080808]">
         <div className="max-w-7xl mx-auto px-6 sm:px-12 py-20 sm:py-28">
           {/* Section Header */}
           <div className="max-w-lg mb-12">
@@ -283,7 +282,7 @@ export function HeroPage() {
       {/* ---------------------------------------------------- */}
       {/* 03 — HOW IT WORKS (NUMBERED STEPS)                    */}
       {/* ---------------------------------------------------- */}
-      <section className="bg-[#0a0a0a] border-t border-white/5">
+      <section className="bg-[#080808] border-t border-white/5">
         <div className="max-w-7xl mx-auto px-6 sm:px-12 py-20 sm:py-28">
           {/* Section Header */}
           <div className="max-w-lg mb-12">
@@ -353,7 +352,7 @@ export function HeroPage() {
       {/* ---------------------------------------------------- */}
       {/* 04 — FINAL CTA BAND                                  */}
       {/* ---------------------------------------------------- */}
-      <section className="bg-[#0a0a0a] border-t border-white/5">
+      <section className="bg-[#080808] border-t border-white/5">
         <div className="max-w-7xl mx-auto px-6 sm:px-12 py-20 sm:py-28">
           <div className="max-w-xl mx-auto text-center flex flex-col items-center">
             <h2 className="text-white text-3xl sm:text-4xl font-medium tracking-tight mb-4">
@@ -364,17 +363,17 @@ export function HeroPage() {
             </p>
             <div className="flex items-center justify-center gap-3">
               <Link
-                to="/payouts/new"
+                to="/campaigns/new"
                 className="bg-white text-black rounded-full px-7 py-3 font-medium text-sm hover:bg-white/90 transition-colors"
               >
                 Start Today
               </Link>
-              <Link
-                to="/claim/demo"
+              <a
+                href="#features"
                 className="liquid-glass text-white rounded-full px-7 py-3 font-medium text-sm hover:bg-white/5 transition-colors"
               >
-                Claim Demo
-              </Link>
+                See how it works
+              </a>
             </div>
           </div>
         </div>
@@ -383,11 +382,11 @@ export function HeroPage() {
       {/* ---------------------------------------------------- */}
       {/* 05 — FOOTER                                          */}
       {/* ---------------------------------------------------- */}
-      <footer className="bg-[#0a0a0a] border-t border-white/10">
+      <footer className="bg-[#080808] border-t border-white/10">
         <div className="max-w-7xl mx-auto px-6 sm:px-12 py-10 flex flex-col sm:flex-row items-center justify-between gap-4">
           {/* Left */}
           <div className="flex items-center gap-2">
-            <InfinityIcon size={18} strokeWidth={1.5} className="text-white/80" />
+            <Zap size={18} strokeWidth={1.5} className="text-white/80" />
             <span className="text-white/60 text-sm font-medium">ReRail</span>
             <span className="text-white/30 text-xs ml-2">© 2026</span>
           </div>

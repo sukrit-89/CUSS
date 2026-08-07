@@ -12,10 +12,7 @@ export {
   type CreateClaimableBalanceInput,
 } from './claimable-balance';
 
-export {
-  buildFeeBumpTransaction,
-  buildClaimInnerTransaction,
-} from './fee-bump';
+export { buildClaimInnerTransaction } from './fee-bump';
 
 export {
   recipientPredicate,
@@ -26,8 +23,7 @@ export {
 export {
   loadAccount,
   accountExists,
-  fundWithFriendbot,
-  buildSponsoredAccountOps,
+  getAssetBalance,
 } from './account';
 
 export {
@@ -41,14 +37,12 @@ export {
   submitRegistryTx,
   balanceIdToHash,
   buildCreateRegistryCampaignTx,
-  buildRegisterRegistryRecipientTx,
   buildActivateRegistryCampaignTx,
-  buildMarkRegistryBalanceCreatedTx,
-  buildRecordRegistryClaimTx,
+  buildCreateAndRegisterTx,
+  buildRegisterRecipientsTx,
+  MAX_REGISTRY_BATCH,
   type RegistryCampaignInput,
-  type RegistryRecipientInput,
-  type RegistryRecipientBalanceInput,
-  type RegistryClaimInput,
+  type RegistryBatchRecipient,
 } from './registry-contract';
 
 
