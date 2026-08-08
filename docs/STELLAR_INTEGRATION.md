@@ -1,268 +1,112 @@
 # ReRail — Stellar Integration Guide
 
-> Deep dive into Claimable Balances, Fee Bump Transactions, and Sponsored Accounts.
+> Deep dive into Stellar native Claimable Balances, Fee-Bump Envelopes, Account Sponsorship, and Stellar Wallets Kit.
 
 ---
 
-## Table of Contents
+## Native Stellar Protocol Primitives
 
-- [Overview](#overview)
-- [Claimable Balance Lifecycle](#claimable-balance-lifecycle)
-- [Fee Bump Transaction Mechanics](#fee-bump-transaction-mechanics)
-- [Batch Transaction Strategy](#batch-transaction-strategy)
-- [Sponsored Account Creation (L6)](#sponsored-account-creation-l6)
-- [Error Handling](#error-handling)
-- [Testing on Testnet](#testing-on-testnet)
+ReRail relies directly on first-class Stellar protocol primitives introduced in Protocol 13 (Fee Bumps), Protocol 15 (Claimable Balances), and Protocol 19 (Sponsorship).
 
----
-
-## Overview
-
-ReRail uses two first-class Stellar protocol primitives — no smart contracts required:
-
-| Primitive | Purpose in ReRail |
-|---|---|
-| **Claimable Balance** | Lock USDC per recipient with time-gated access |
-| **Fee Bump Transaction** | Wrap recipient's claim TX so they pay zero gas |
-
-These are not Soroban simulations. They are native protocol operations, battle-tested since Protocol 15 (claimable balances) and Protocol 13 (fee bumps).
+| Primitive | Operation Type | ReRail Function |
+|---|---|---|
+| **Claimable Balance** | `createClaimableBalance` / `claimClaimableBalance` | Lock funds per recipient on-chain with time predicates |
+| **Fee-Bump Envelope** | `FeeBumpTransaction` | Wrap recipient's transaction so ReRail pays network gas |
+| **Account Sponsorship** | `beginSponsoringFutureReserves` / `createAccount` | Sponsor 1.5 XLM reserve requirements for unfunded wallets |
 
 ---
 
-## Claimable Balance Lifecycle
+## 1. Claimable Balances & Predicates
 
-### 1. Creation (Organiser Action)
-
-When an organiser activates a campaign, ReRail creates one claimable balance per recipient:
+### Creation
+When an organizer funds a campaign, ReRail creates one claimable balance per recipient:
 
 ```typescript
 Operation.createClaimableBalance({
-  asset: USDC_ASSET,     // USDC on testnet/mainnet
-  amount: '50.0000000',  // 7 decimal places (Stellar convention)
+  asset: USDC_ASSET,
+  amount: recipientAmount,
   claimants: [
-    // Recipient: can claim BEFORE deadline
+    // Recipient: allowed to claim before campaign deadline
     new Claimant(
-      recipientPublicKey,
+      recipientAddress,
       Claimant.predicateBeforeRelativeTime(deadlineSeconds.toString())
     ),
-    // Organiser: can reclaim AFTER deadline
+    // Organizer: allowed to reclaim after deadline
     new Claimant(
-      organizerPublicKey,
+      organizerAddress,
       Claimant.predicateNot(
         Claimant.predicateBeforeRelativeTime(deadlineSeconds.toString())
       )
     ),
   ],
-})
+});
 ```
 
-**What happens on-chain:**
-- The USDC is debited from the organiser's account
-- A claimable balance entry is created on the ledger
-- The balance is assigned a unique `balanceId` (returned in the transaction result)
-- The organiser's minimum balance requirement increases by 1 base reserve
-
-### 2. Claiming (Recipient Action)
-
-The recipient claims their balance with a single operation:
-
-```typescript
-Operation.claimClaimableBalance({ balanceId })
-```
-
-**What happens on-chain:**
-- The USDC is credited to the recipient's account
-- The claimable balance entry is removed from the ledger
-- The organiser's reserve requirement decreases
-
-### 3. Reclaiming (Organiser Action — After Deadline)
-
-If the deadline passes and the recipient hasn't claimed:
-
-```typescript
-// Same operation, but the organiser is the claimant
-Operation.claimClaimableBalance({ balanceId })
-```
-
-The time predicate now allows the organiser to claim. The USDC returns to the organiser.
-
-### Balance ID Extraction
-
-After creating a claimable balance, the balance ID is extracted from the transaction result:
-
-```typescript
-const result = await server.submitTransaction(tx);
-const ops = result.result_xdr; // Contains the balance ID
-// Alternative: query Horizon for claimable balances by sponsor/claimant
-```
-
-For ReRail, we query Horizon after transaction submission to get the balance IDs associated with the claimant addresses.
+### Protocol Mechanics
+- Funds are transferred from organizer treasury into an on-chain Claimable Balance entry.
+- The entry stores a unique 32-byte hex ID (`balance_id`).
+- Recipient can execute `Operation.claimClaimableBalance({ balanceId })` anytime before the deadline.
 
 ---
 
-## Fee Bump Transaction Mechanics
+## 2. Fee-Bump Transaction Envelopes
 
-### The Problem
-
-To claim a claimable balance, the recipient needs to submit a transaction. But submitting a transaction requires XLM for the network fee. New users don't have XLM.
-
-### The Solution
-
-A **Fee Bump Transaction** wraps the recipient's signed transaction with a different fee source:
+To prevent recipients from needing XLM gas:
 
 ```
-┌─────────────────────────────────────┐
-│ Fee Bump Transaction (Outer)        │
-│ Fee Source: ReRail Fee Payer        │
-│ Fee: 1000 stroops                   │
-│ Signature: Fee Payer key            │
-│                                     │
-│   ┌─────────────────────────────┐   │
-│   │ Inner Transaction           │   │
-│   │ Source: Recipient            │   │
-│   │ Op: claimClaimableBalance    │   │
-│   │ Fee: 100 stroops (ignored)   │   │
-│   │ Signature: Recipient key     │   │
-│   └─────────────────────────────┘   │
-│                                     │
-└─────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│ Fee Bump Transaction (Outer)                  │
+│ Fee Source: ReRail Fee Payer Account           │
+│ Max Fee: 1,000 stroops (0.0001 XLM)            │
+│ Signature: Fee Payer Private Key              │
+│                                               │
+│   ┌───────────────────────────────────────┐   │
+│   │ Inner Transaction                     │   │
+│   │ Source Account: Recipient Wallet      │   │
+│   │ Operation: claimClaimableBalance      │   │
+│   │ Signature: Recipient Wallet (Freighter)│  │
+│   └───────────────────────────────────────┘   │
+└───────────────────────────────────────────────┘
 ```
 
-### Flow
-
-1. **Frontend** builds the inner transaction (source = recipient, op = claimClaimableBalance)
-2. **Freighter** signs it with the recipient's key
-3. **Frontend** sends the signed XDR to `/api/claim/:token/execute`
-4. **Server** wraps it in a fee bump (fee source = fee payer)
-5. **Server** signs the outer envelope with the fee payer key
-6. **Server** submits the complete fee bump transaction to Horizon
-
-### Key Properties
-
-- The inner transaction fee is **irrelevant** — the outer fee is what gets charged
-- The recipient account doesn't need any XLM balance
-- The fee payer only needs to hold enough XLM for fees (~0.01 XLM per bump)
-- The fee payer never touches the USDC or the claimable balance
+1. Recipient wallet signs the inner transaction XDR locally.
+2. Serverless endpoint `/api/claim/:token/execute` verifies the inner transaction.
+3. Server wraps the inner transaction in `TransactionBuilder.buildFeeBumpTransaction(...)`.
+4. Fee Payer signs outer envelope and submits to Stellar Horizon RPC.
 
 ---
 
-## Batch Transaction Strategy
+## 3. Account & Trustline Sponsorship
 
-### Limits
-
-- Stellar allows **up to 100 operations per transaction**
-- Each `createClaimableBalance` is one operation
-- For campaigns with > 100 recipients, we split into multiple transactions
-
-### Implementation
+For new recipients without active accounts or USDC trustlines:
 
 ```typescript
-function buildBatchClaimableBalances(recipients, ...): Transaction[] {
-  const batches = chunk(recipients, MAX_OPS_PER_TX); // 100 per batch
-  return batches.map(batch => {
-    const builder = new TransactionBuilder(organizerAccount, { ... });
-    batch.forEach(r => builder.addOperation(
-      Operation.createClaimableBalance({ ... })
-    ));
-    return builder.build();
-  });
-}
-```
-
-### Sequence Numbers
-
-Each batch transaction needs a unique sequence number. Since they're submitted sequentially by the organiser (signed via Freighter one at a time), the sequence numbers auto-increment.
-
-### Error Recovery
-
-If a batch transaction fails mid-way:
-1. Check which balances were created (query Horizon by claimant)
-2. Resume from the first uncreated recipient
-3. The organiser can retry the activation for remaining recipients
-
----
-
-## Sponsored Account Creation (L6)
-
-For recipients who don't have a Stellar account at all, ReRail can sponsor account creation:
-
-```typescript
-const ops = [
-  // 1. Platform begins sponsoring reserves
+const sponsorOps = [
   Operation.beginSponsoringFutureReserves({
-    sponsoredId: newAccountPublicKey,
+    sponsoredId: recipientWallet,
+    source: feePayerPublicKey,
   }),
-  // 2. Create the account with 0 starting balance
   Operation.createAccount({
-    destination: newAccountPublicKey,
+    destination: recipientWallet,
     startingBalance: '0',
+    source: feePayerPublicKey,
   }),
-  // 3. Add USDC trustline (source: new account, sponsored by platform)
   Operation.changeTrust({
     asset: USDC_ASSET,
-    source: newAccountPublicKey,
+    source: recipientWallet,
   }),
-  // 4. End sponsorship (source: new account agrees to be sponsored)
   Operation.endSponsoringFutureReserves({
-    source: newAccountPublicKey,
+    source: recipientWallet,
   }),
 ];
 ```
 
-**Requirements:**
-- Both the sponsor and the new account must sign the transaction
-- The sponsor pays all reserve requirements (~1 XLM per account + 0.5 XLM per trustline)
-- After creation, the recipient can immediately receive USDC via claimable balance
+Both the fee-payer and recipient sign this atomic multi-operation transaction, activating the account and trustline with **0 XLM spent by the recipient**.
 
 ---
 
-## Error Handling
+## 4. Multi-Wallet Integration via Stellar Wallets Kit
 
-### Common Errors
-
-| Error | Cause | Response |
-|---|---|---|
-| `op_does_not_exist` | Balance already claimed or doesn't exist | Return "already claimed" |
-| `op_not_authorized` | Recipient not a valid claimant | Return "not authorized" |
-| `op_line_full` | Recipient's USDC trustline at max | Prompt to increase limit |
-| `op_no_trust` | Recipient has no USDC trustline | Prompt to add trustline |
-| `tx_bad_seq` | Stale sequence number | Reload account + retry |
-| `tx_too_late` | Transaction timeout expired | Rebuild + resubmit |
-| `FEE_BUMP_INNER_FAILED` | Inner TX invalid | Check inner error codes |
-
-### Retry Strategy
-
-1. **Transient errors** (bad_seq, too_late): Retry up to 3 times with exponential backoff
-2. **Permanent errors** (op_does_not_exist, op_not_authorized): Don't retry, return clear error
-3. **Fee payer errors**: Alert monitoring, don't expose to user
-
----
-
-## Testing on Testnet
-
-### Setup
-
-```bash
-# 1. Generate and fund testnet accounts
-npx tsx scripts/generate-testnet-accounts.ts
-
-# 2. Set up USDC trustlines
-npx tsx scripts/setup-usdc-trustline.ts
-
-# 3. Run E2E claim flow test
-npx tsx scripts/test-claim-flow.ts
-```
-
-### Verification Tools
-
-- **Stellar Laboratory**: https://laboratory.stellar.org/ — Build and submit test transactions
-- **StellarExpert (Testnet)**: https://stellar.expert/explorer/testnet — Browse accounts, transactions, balances
-- **Horizon API**: `GET /claimable_balances?claimant={pubkey}` — Query pending balances
-
-### Test Scenarios
-
-1. **Happy path**: Create balance → Claim → Verify USDC received
-2. **Expired claim**: Create balance with 60s deadline → Wait → Organiser reclaims
-3. **Double claim**: Claim balance → Try claiming again → Verify rejection
-4. **No trustline**: Recipient without USDC trustline → Verify clear error
-5. **Batch creation**: Create 150 recipients → Verify split into 2 transactions
+ReRail uses `@creit.tech/stellar-wallets-kit` for wallet abstraction:
+- Supported Wallets: Freighter, Albedo, Hana, xBull, Lobstr, Rabet.
+- Session storage & wallet readiness checks integrated into `wallet.store.ts`.

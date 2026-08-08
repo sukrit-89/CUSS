@@ -7,6 +7,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { NewPayoutPage } from './pages/NewPayoutPage';
 import { CampaignDetailPage } from './pages/CampaignDetailPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { DocsPage } from './pages/DocsPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { useAuthStore } from '@/stores/auth.store';
 import { initWalletKit } from '@/lib/stellar/wallet-kit';
@@ -26,6 +27,7 @@ export default function App() {
     <Router>
       <Routes>
         <Route path="/" element={<HeroPage />} />
+        <Route path="/docs" element={<DocsPage />} />
         <Route path="/claim/:id" element={<ClaimPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />

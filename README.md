@@ -1,85 +1,72 @@
-# ReRail
+# ReRail ⚡
 
-Gasless payout infrastructure on Stellar.
+> **Gasless payout infrastructure built on Stellar.**  
+> Set up a grant. Send a link. Get paid — no XLM or wallet friction required.
 
-ReRail lets an organizer upload a recipient list, create on-chain claimable balances, and distribute USDC through shareable claim links. Recipients can claim without paying gas or holding XLM, while organizers keep full control over the treasury and payout timing.
+![License](https://img.shields.io/badge/License-MIT-blue.svg)
+![Stellar](https://img.shields.io/badge/Stellar-Testnet-black?logo=stellar)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript)
 
-## What it does
+---
 
-- Create campaigns from a CSV or manual recipient entries.
-- Lock funds on Stellar with native claimable balances.
-- Generate unique claim links for each recipient.
-- Sponsor recipient claims, account activation, and trustlines.
-- Mirror campaign activity to an optional Soroban registry for auditability.
+## ⚡ What is ReRail?
 
-## Highlights
+ReRail is an end-to-end gasless distribution platform on Stellar that allows organizations, hackathons, DAO organizers, and grant managers to send USDC payouts through shareable claim links.
 
-- Non-custodial organizer flow with Freighter wallet signing.
-- Gasless recipient claims through fee-bump transactions.
-- CSV validation and sanitization for names, emails, wallet addresses, and amounts.
-- Supabase-backed campaign, recipient, and transaction storage with RLS.
-- Optional on-chain registry support for extra provenance.
+Recipients can claim funds without holding XLM or paying gas fees. ReRail sponsors account reserves, trustline creation, and balance execution through Stellar native protocol primitives.
 
-## Architecture
+---
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Organizer
-    participant App as ReRail web app
-    participant DB as Supabase
-    participant Wallet as Freighter
-    participant Stellar as Stellar network
-    actor Recipient
-    participant API as Vercel API
+## ✨ Key Features
 
-    Organizer->>App: Create campaign and upload recipients
-    App->>DB: Store campaign + recipient rows
-    App->>Wallet: Request organizer signature
-    Wallet->>Stellar: Submit claimable balance batch
-    Stellar->>DB: Claimable balance IDs get synced
+- 💸 **Gasless Claims:** Recipients pay **0 XLM**. All transaction fees are covered via native Fee-Bump transactions.
+- 🔗 **Shareable Claim Links:** Unique, secure UUID v4 claim URLs for every recipient.
+- 🔒 **Native Protocol Primitives:** Native Stellar Claimable Balances with time predicates — no complex smart contract risks.
+- ⚡ **Sponsored Reserves:** ReRail sponsors account activation and USDC trustlines for brand-new crypto users.
+- 🎨 **Liquid Glass UI:** Modern obsidian design system built with Geist typography and subtle glassmorphic styling.
+- 📊 **DeFi Intelligence:** Live Reflector Oracle USD prices, Blend Protocol APY yield projections, and SoroSwap DEX swap quotes.
+- 🛡️ **Gasless Security:** Atomic attempt caps (`begin_gasless_op`), SHA-256 token hashing, and strict Supabase Row Level Security (RLS).
 
-    Recipient->>App: Open claim link
-    App->>API: Resolve claim token
-    API->>DB: Return amount, status, balance ID
-    Recipient->>Wallet: Sign inner claim transaction
-    App->>API: Submit signed transaction
-    API->>Stellar: Wrap in fee bump and submit
-    API->>DB: Mark recipient claimed
+---
+
+## 🏗️ Architecture & Stack
+
+- **Frontend:** React 19, TypeScript, Vite 8, Tailwind CSS v4, Zustand.
+- **Wallet Support:** `@creit.tech/stellar-wallets-kit` (Freighter, Albedo, Hana, xBull, Lobstr).
+- **Backend API:** Vercel Serverless Functions (`/api/*`).
+- **Database & Auth:** Supabase PostgreSQL with RLS + Google OAuth authentication.
+- **Stellar Network:** `@stellar/stellar-sdk` connecting to SDF Testnet / Mainnet.
+
+```
+Organizers ──→ ReRail Dashboard ──→ Funding Batch (Stellar SDK) ──→ Claimable Balances
+                                                                             │
+Recipients ──→ Claim Link (/claim/:token) ──→ Serverless Fee-Bump ───────────┘
 ```
 
-## Tech Stack
+---
 
-| Area | Stack |
-|---|---|
-| Frontend | React 19, Vite, TypeScript |
-| Styling | Tailwind CSS v4 |
-| State | Zustand |
-| Auth / DB | Supabase |
-| Wallet | Stellar Wallets Kit + Freighter |
-| Chain | `@stellar/stellar-sdk` |
-| Serverless | Vercel Functions |
-| Contracts | Soroban Rust contract (optional registry) |
+## 📚 Documentation
 
-## Repository Layout
+Detailed technical documentation is available both in the web application at `/docs` and in the repository:
 
-```text
-api/        Serverless endpoints for claims, sync, trustlines, and account sponsorship
-contracts/  Soroban registry contract
-docs/       Architecture, API, security, and Stellar integration notes
-src/        React app, shared utilities, stores, and UI
-supabase/   Database migrations, seed data, and Supabase config
-```
+- 📖 [Product Requirements Document (PRD)](./prd.md)
+- 🔌 [API Reference](./docs/API.md)
+- 🏗️ [System Architecture](./docs/ARCHITECTURE.md)
+- 🛡️ [Security Model](./docs/SECURITY.md)
+- ⚡ [Stellar Integration Guide](./docs/STELLAR_INTEGRATION.md)
 
-## Getting Started
+---
 
-### Prerequisites
+## 🚀 Quick Start (Local Development)
 
-- Node.js 20+ or Bun 1.3+
-- Freighter wallet extension
-- Rust and Cargo if you want to work on the Soroban contract
+### 1. Prerequisites
+- Node.js v20+ or Bun
+- Git
+- Supabase account or CLI
 
-### Install
+### 2. Environment Setup
+Clone the repository and create `.env` from template:
 
 ```bash
 git clone https://github.com/sukrit-89/CUSS.git rerail
@@ -87,83 +74,42 @@ cd rerail
 bun install
 ```
 
-If you prefer npm:
-
-```bash
-npm install
-```
-
-### Configure environment
-
-Create a local env file and fill in your values:
-
-```bash
-cp .env.example .env.local
-```
-
+Configure your `.env` file:
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+FEE_PAYER_SECRET=your-stellar-fee-payer-secret
 VITE_HORIZON_URL=https://horizon-testnet.stellar.org
 VITE_NETWORK_PASSPHRASE="Test SDF Network ; September 2015"
 VITE_USDC_ISSUER=GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5
-VITE_CLAIM_LINK_BASE_URL=http://localhost:5174
+VITE_CLAIM_LINK_BASE_URL=http://localhost:5173
 ```
 
-### Run locally
-
+### 3. Run Development Server
 ```bash
 bun run dev
 ```
 
-Open the local URL printed by Vite in your terminal.
+Open `http://localhost:5173` in your browser.
 
-## Available Scripts
+---
 
-| Command | Description |
-|---|---|
-| `bun run dev` | Start the frontend development server |
-| `bun run build` | Type-check and build the app |
-| `bun run lint` | Run oxlint |
+## 🧪 Testing & Verification
 
-## Stellar Flow
+Build validation:
+```bash
+bun run build
+```
 
-### Campaign creation
+Database migrations push:
+```bash
+npx supabase db push
+```
 
-1. Organizer signs in with Supabase Auth.
-2. Campaign metadata and recipients are stored in Supabase.
-3. The app builds `createClaimableBalance` transactions.
-4. Organizer signs the batch in Freighter.
-5. The signed transaction is submitted to Stellar.
-6. Balance IDs are synced back to the database.
+---
 
-### Claim execution
+## 📜 License
 
-1. Recipient opens `/claim/:token`.
-2. The app resolves the claim token through the API.
-3. Recipient signs the inner claim transaction.
-4. The API wraps it in a fee bump transaction.
-5. The transaction is submitted and the claim is marked complete.
-
-## Environment Notes
-
-- Claim links should use `VITE_CLAIM_LINK_BASE_URL` in local development.
-- If that variable is unset, the app falls back to the current browser origin.
-- Supabase service-role credentials are only required for deployed serverless routes.
-
-## Security Model
-
-- Organizers never hand over private keys.
-- Recipient claims are tied to exact claim link tokens and wallet addresses.
-- Amounts are validated as plain decimal strings with up to 7 fractional digits.
-- Supabase RLS scopes organizer data to the authenticated user.
-- CSV input is sanitized before import.
-
-## Development Notes
-
-- The repo includes a local Vite API router so `/api/*` works during `bun run dev`.
-- The Supabase-backed routes are designed to run in Vercel Functions in production.
-
-## License
-
-MIT
+MIT License © 2026 ReRail

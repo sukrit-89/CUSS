@@ -12,9 +12,17 @@ import {
 
 import { PUBLIC_BG_VIDEO as BG_VIDEO } from '@/config/constants';
 
-const navLinks = [
+interface NavLink {
+  label: string;
+  path: string;
+  active?: boolean;
+  dropdown?: boolean;
+}
+
+const navLinks: NavLink[] = [
   { label: 'Home', active: true, path: '/' },
   { label: 'How it Works', dropdown: true, path: '#features' },
+  { label: 'Docs', path: '/docs' },
   { label: 'Dashboard', path: '/dashboard' },
 ];
 
@@ -393,9 +401,9 @@ export function HeroPage() {
 
           {/* Right */}
           <div className="flex items-center gap-6 text-sm">
-            <a href="#features" className="text-white/40 hover:text-white transition-colors">
+            <Link to="/docs" className="text-white/40 hover:text-white transition-colors">
               Docs
-            </a>
+            </Link>
             <a
               href="https://github.com/sukrit-89/CUSS"
               target="_blank"

@@ -1,12 +1,14 @@
 # ReRail — API Reference
 
-> Vercel Serverless Functions for claim resolution and execution.
+> Vercel Serverless Functions for gasless payout resolution, account sponsorship, trustline creation, and balance execution on Stellar.
 
 ---
 
-## Base URL
+## Overview & Base URL
 
-| Environment | URL |
+ReRail utilizes Vercel Serverless API functions to execute gasless operations without exposing server secrets (`FEE_PAYER_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`) to the client bundle.
+
+| Environment | Base URL |
 |---|---|
 | Development | `http://localhost:5173/api` |
 | Staging | `https://rerail-staging.vercel.app/api` |
@@ -14,149 +16,138 @@
 
 ---
 
-## Endpoints
+## Endpoints Summary
 
-### `GET /api/claim/:token/resolve`
-
-Resolves a claim link token to recipient information. This endpoint is **public** — no authentication required.
-
-#### Parameters
-
-| Parameter | Type | Location | Required | Description |
-|---|---|---|---|---|
-| `token` | `string` | URL path | Yes | UUID v4 claim link token |
-
-#### Response `200 OK`
-
-```json
-{
-  "recipient_name": "Alice Chen",
-  "amount": "50.0000000",
-  "token": "USDC",
-  "status": "pending",
-  "campaign_name": "Hackathon 2026 Prizes",
-  "deadline": "2026-08-01T00:00:00Z",
-  "balance_id": "00000000abc123..."
-}
-```
-
-#### Response `404 Not Found`
-
-```json
-{
-  "error": "Claim link not found"
-}
-```
-
-#### Response `410 Gone`
-
-Returned when the claim has already been processed.
-
-```json
-{
-  "error": "This claim has already been processed",
-  "status": "claimed"
-}
-```
-
-#### Rate Limit
-
-30 requests per minute per IP address.
+| Endpoint | Method | Auth | Description |
+|---|---|---|---|
+| [`/api/claim/:token/resolve`](#1-get-apiclaimtokenresolve) | `GET` | Public | Resolves claim link metadata & status |
+| [`/api/claim/:token/execute`](#2-post-apiclaimtokenexecute) | `POST` | Token | Fee-bumps and submits recipient claim transaction |
+| [`/api/trustline/:token/execute`](#3-post-apitrustlinetokenexecute) | `POST` | Token | Fee-bumps recipient `changeTrust` operation |
+| [`/api/account/:token/sponsor`](#4-post-apiaccounttokensponsor) | `POST` | Token | Sponsors account creation & USDC trustline for new wallets |
+| [`/api/campaign/sync`](#5-post-apicampaignsync) | `POST` | Bearer | Syncs on-chain claimable balance IDs back to recipients |
 
 ---
 
-### `POST /api/claim/:token/execute`
+## Detailed Endpoint Specifications
 
-Executes a gasless claim by wrapping the recipient's signed inner transaction in a fee bump transaction and submitting it to the Stellar network.
+### 1. `GET /api/claim/:token/resolve`
 
-#### Parameters
+Resolves a claim link token (UUID v4) to recipient & campaign information. This endpoint is **public** and called by the recipient claim page on load.
 
-| Parameter | Type | Location | Required | Description |
-|---|---|---|---|---|
-| `token` | `string` | URL path | Yes | UUID v4 claim link token |
+#### Path Parameters
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `token` | `string` | Yes | UUID v4 claim link token |
 
-#### Request Body
-
+#### Response `200 OK`
 ```json
 {
-  "signed_inner_tx_xdr": "AAAAAgAAAAB...base64-encoded-XDR..."
+  "name": "Alice Chen",
+  "amount": "50.00",
+  "asset_code": "USDC",
+  "token": "68916417-5ea8-4869-9a38-1c9a14771182",
+  "status": "pending",
+  "campaign_name": "ETH Global Hackathon Grants",
+  "deadline": "2026-09-01T00:00:00Z",
+  "balance_id": "00000000a39c812...",
+  "wallet_address": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
 }
 ```
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `signed_inner_tx_xdr` | `string` | Yes | Base64-encoded XDR of the inner transaction, signed by the recipient via Freighter |
+#### Response `410 Gone` (Claimed or Expired)
+```json
+{
+  "error": "Already claimed",
+  "status": "claimed",
+  "amount": "50.00",
+  "asset_code": "USDC",
+  "campaign_name": "ETH Global Hackathon Grants",
+  "claimed_at": "2026-08-05T14:22:00Z",
+  "tx_hash": "a1b2c3d4e5f6..."
+}
+```
+
+---
+
+### 2. `POST /api/claim/:token/execute`
+
+Wraps the recipient's signed `claimClaimableBalance` inner transaction in a Stellar Fee-Bump transaction signed by ReRail's fee payer.
+
+#### Request Body
+```json
+{
+  "signed_inner_tx_xdr": "AAAAAgAAAAB...base64-xdr..."
+}
+```
 
 #### Response `200 OK`
-
 ```json
 {
   "success": true,
-  "tx_hash": "abc123def456...",
-  "stellar_explorer_url": "https://stellar.expert/explorer/testnet/tx/abc123def456..."
+  "tx_hash": "8f3a91b2c...",
+  "hash": "8f3a91b2c..."
 }
 ```
-
-#### Response `400 Bad Request`
-
-```json
-{
-  "error": "Missing signed_inner_tx_xdr in request body"
-}
-```
-
-#### Response `404 Not Found`
-
-```json
-{
-  "error": "Claim link not found"
-}
-```
-
-#### Response `409 Conflict`
-
-```json
-{
-  "error": "This claim has already been processed",
-  "status": "claimed"
-}
-```
-
-#### Response `500 Internal Server Error`
-
-```json
-{
-  "error": "Transaction submission failed",
-  "details": "op_does_not_exist"
-}
-```
-
-#### Rate Limit
-
-10 requests per minute per IP address.
 
 ---
 
-## Error Codes
+### 3. `POST /api/trustline/:token/execute`
 
-| HTTP Status | Error | Description |
-|---|---|---|
-| `400` | `bad_request` | Missing or malformed request body |
-| `404` | `not_found` | Claim token doesn't match any recipient |
-| `405` | `method_not_allowed` | Wrong HTTP method |
-| `409` | `conflict` | Claim already processed (claimed or expired) |
-| `410` | `gone` | Claim expired and no longer available |
-| `429` | `rate_limited` | Too many requests |
-| `500` | `server_error` | Internal error (Stellar network, database, etc.) |
+Fee-bumps a recipient's USDC `changeTrust` transaction so they can enable USDC receiving without owning XLM.
+
+#### Request Body
+```json
+{
+  "signed_inner_tx_xdr": "AAAAAgAAAAB...base64-xdr..."
+}
+```
+
+#### Response `200 OK`
+```json
+{
+  "success": true,
+  "hash": "c4d3e2f1..."
+}
+```
 
 ---
 
-## Security Notes
+### 4. `POST /api/account/:token/sponsor`
 
-1. The `resolve` endpoint returns **non-sensitive** information only (name, amount, status)
-2. The `execute` endpoint validates the inner transaction before wrapping:
-   - Must contain exactly one `claimClaimableBalance` operation
-   - The balance ID must match the recipient's stored balance
-   - The recipient must have status `pending`
-3. The fee payer secret is **never** exposed in responses or logs
-4. All endpoints enforce CORS headers via `vercel.json`
+Two-phase endpoint to activate a brand-new Stellar account and add its USDC trustline with zero XLM required from the recipient.
+
+#### Phase 1: Build Unsigned Sponsorship TX (`POST` with no body)
+```json
+{
+  "unsigned_tx_xdr": "AAAAAgAAAAB...",
+  "wallet_address": "GBBD47..."
+}
+```
+
+#### Phase 2: Co-sign & Submit (`POST` with `signed_tx_xdr`)
+```json
+{
+  "signed_tx_xdr": "AAAAAgAAAAB..."
+}
+```
+
+---
+
+### 5. `POST /api/campaign/sync`
+
+Syncs on-chain claimable balance IDs from Horizon to database recipients after funding.
+
+#### Query Parameters
+- `txHash`: Stellar transaction hash
+- `campaignId`: Campaign UUID
+
+#### Headers
+- `Authorization: Bearer <supabase_access_token>`
+
+---
+
+## Security & Error Handling
+
+- **Rate Limits:** Enforced per IP address (30/min for resolve, 10/min for execution routes).
+- **Atomic Locking:** API routes execute `begin_gasless_op` in PostgreSQL to cap gasless attempts at 5 per operation kind per link.
+- **Strict Inner TX Verification:** Verifies inner transactions contain only expected operations (`claimClaimableBalance`, `changeTrust`) targeting the recipient's registered wallet address.

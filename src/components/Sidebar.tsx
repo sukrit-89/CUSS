@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   PlusCircle,
   Settings,
+  BookOpen,
   Home,
   LogOut,
 } from 'lucide-react';
@@ -18,6 +19,7 @@ export function Sidebar() {
   const navItems = [
     { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { label: 'New Payout', path: '/campaigns/new', icon: PlusCircle },
+    { label: 'Docs', path: '/docs', icon: BookOpen },
     { label: 'Settings', path: '/settings', icon: Settings },
   ];
 
