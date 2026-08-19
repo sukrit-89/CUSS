@@ -8,7 +8,11 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck:api": "tsc -p tsconfig.api.json --noEmit",
+    "contracts:test": "cargo test --manifest-path contracts/Cargo.toml",
+    "contracts:build": "stellar contract build --manifest-path contracts/Cargo.toml",
+    "verify": "bun run lint && bun run build && bun run typecheck:api && bun run contracts:test"
   },
   "dependencies": {
     "@blend-capital/blend-sdk": "^3.3.0",

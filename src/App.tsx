@@ -9,6 +9,7 @@ import { CampaignDetailPage } from './pages/CampaignDetailPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { DocsPage } from './pages/DocsPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { ToastContainer } from './components/ToastContainer';
 import { useAuthStore } from '@/stores/auth.store';
 import { initWalletKit } from '@/lib/stellar/wallet-kit';
 
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <ToastContainer />
     </Router>
   );
 }

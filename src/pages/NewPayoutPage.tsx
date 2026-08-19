@@ -18,6 +18,7 @@ import { RecipientsTable, type Recipient } from '@/components/RecipientsTable';
 import { useCampaignStore } from '@/stores/campaign.store';
 import { useWalletStore } from '@/stores/wallet.store';
 import { useAuthStore } from '@/stores/auth.store';
+import { toast } from '@/stores/toast.store';
 import { parseRecipientsCSV } from '@/features/campaigns/utils/csv-parser';
 import { downloadCSV, exportRecipientsCSV } from '@/features/campaigns/utils/csv-export';
 import { CampaignActivationService } from '@/features/campaigns/services/campaign-activation.service';
@@ -63,16 +64,16 @@ type GenerationState =
   | 'error';
 
 /** Ordered progress rows shown while the campaign is being created. */
-const PROGRESS_STEPS: Array<{ key: GenerationState; label: string }> = [
+const getProgressSteps = (): Array<{ key: GenerationState; label: string }> => [
   { key: 'creating', label: 'Creating campaign record' },
-  { key: 'registering', label: 'Recording campaign on Soroban registry' },
+  ...(RegistryService.isEnabled
+    ? [{ key: 'registering' as const, label: 'Recording campaign on Soroban registry' }]
+    : []),
   { key: 'activating', label: 'Building claimable balance transactions' },
   { key: 'signing', label: 'Waiting for organizer signature' },
   { key: 'submitting', label: 'Submitting to Stellar' },
   { key: 'syncing', label: 'Linking claim links to on-chain balances' },
 ];
-
-const PROGRESS_ORDER = PROGRESS_STEPS.map((step) => step.key);
 
 /** `datetime-local` wants `YYYY-MM-DDTHH:mm` in local time, not an ISO string. */
 function toDateTimeLocal(date: Date): string {
@@ -481,10 +482,13 @@ export function NewPayoutPage() {
       exportRecipientsCSV(exportData as never, campaignName, CLAIM_LINK_BASE_URL),
       `${campaignName || 'payout'}-claim-links.csv`,
     );
+    toast.success('Claim links CSV downloaded!');
   };
 
   const isCreating = genState !== 'idle' && genState !== 'error' && genState !== 'done';
-  const currentProgressIndex = PROGRESS_ORDER.indexOf(genState);
+  const progressSteps = useMemo(() => getProgressSteps(), []);
+  const progressOrder = useMemo(() => progressSteps.map((s) => s.key), [progressSteps]);
+  const currentProgressIndex = progressOrder.indexOf(genState);
 
   return (
     <div className="min-h-screen bg-[#080808] text-white flex">
@@ -882,7 +886,7 @@ export function NewPayoutPage() {
 
                     {isCreating && (
                       <div className="flex flex-col gap-2">
-                        {PROGRESS_STEPS.map((progressStep, index) => {
+                        {progressSteps.map((progressStep, index) => {
                           const isComplete = index < currentProgressIndex;
                           const isCurrent = index === currentProgressIndex;
                           if (

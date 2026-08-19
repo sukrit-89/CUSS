@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Zap,
   BookOpen,
   Shield,
   Cpu,
@@ -18,6 +17,7 @@ import {
   Layers,
   CheckCircle2,
 } from 'lucide-react';
+import { ReRailLogo } from '@/components/ReRailLogo';
 import { PUBLIC_BG_VIDEO } from '@/config/constants';
 
 interface Section {
@@ -31,10 +31,17 @@ interface Section {
 const SECTIONS: Section[] = [
   {
     id: 'overview',
-    title: 'Overview & Quickstart',
+    title: 'Overview & Status',
     category: 'Getting Started',
     icon: BookOpen,
-    description: 'Introduction to ReRail, one-line pitch, and recipient onboarding flow.',
+    description: 'What is live today, what is testnet-only, and what reviewers should verify.',
+  },
+  {
+    id: 'review-runbook',
+    title: 'Testnet Review Runbook',
+    category: 'Reviewer Guide',
+    icon: CheckCircle2,
+    description: 'Fast checklist for creating a campaign and claiming as a recipient on testnet.',
   },
   {
     id: 'architecture',
@@ -104,7 +111,7 @@ export function DocsPage() {
           </Link>
           <div className="h-4 w-[1px] bg-white/10 hidden sm:block" />
           <Link to="/" className="flex items-center gap-2.5 text-white font-medium text-lg">
-            <Zap size={22} strokeWidth={1.5} className="text-white" />
+            <ReRailLogo size={22} strokeWidth={1.5} className="text-white" />
             <span>ReRail</span>
             <span className="liquid-glass text-xs text-white/60 px-2 py-0.5 rounded-full font-mono font-normal border border-white/10">
               Docs v1.0
@@ -219,9 +226,9 @@ export function DocsPage() {
                   Getting Started
                 </span>
                 <h2 className="text-2xl font-medium text-white mt-1 flex items-center gap-3">
-                  Overview & Quickstart
+                  Overview & Status
                   <span className="liquid-glass text-xs text-green-400 px-2.5 py-0.5 rounded-full border border-green-500/30">
-                    Production Scale (L6)
+                    Testnet MVP
                   </span>
                 </h2>
               </div>
@@ -232,31 +239,40 @@ export function DocsPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="liquid-glass rounded-xl p-4 flex flex-col gap-2">
-                  <div className="text-xs font-medium text-white/50 uppercase tracking-wider">Step 1</div>
-                  <div className="text-sm font-medium text-white">Organize & Fund</div>
+                  <div className="text-xs font-medium text-white/50 uppercase tracking-wider">Implemented</div>
+                  <div className="text-sm font-medium text-white">Organizer payout flow</div>
                   <p className="text-xs text-white/50">
-                    Upload recipient CSV, review total USDC, and fund treasury in one step.
+                    Google-auth dashboard, CSV/manual recipients, USDC treasury checks, claimable balance batch creation, and Horizon sync.
                   </p>
                 </div>
                 <div className="liquid-glass rounded-xl p-4 flex flex-col gap-2">
-                  <div className="text-xs font-medium text-white/50 uppercase tracking-wider">Step 2</div>
-                  <div className="text-sm font-medium text-white">Share Claim Link</div>
+                  <div className="text-xs font-medium text-white/50 uppercase tracking-wider">Implemented</div>
+                  <div className="text-sm font-medium text-white">Gasless recipient claim</div>
                   <p className="text-xs text-white/50">
-                    Send unique UUID v4 claim URLs to recipients via email, Discord, or DM.
+                    Public claim links resolve status, guide wallet setup, sponsor account/trustline prerequisites, and fee-bump final claims.
                   </p>
                 </div>
                 <div className="liquid-glass rounded-xl p-4 flex flex-col gap-2">
-                  <div className="text-xs font-medium text-white/50 uppercase tracking-wider">Step 3</div>
-                  <div className="text-sm font-medium text-white">0 XLM Claim</div>
+                  <div className="text-xs font-medium text-white/50 uppercase tracking-wider">Optional</div>
+                  <div className="text-sm font-medium text-white">Soroban registry mirror</div>
                   <p className="text-xs text-white/50">
-                    Recipients claim funds instantly. ReRail sponsors reserves and fee-bumps gas.
+                    Registry contract is built and tested. Payouts still work if registry env vars are left blank.
                   </p>
                 </div>
               </div>
 
+              <div className="liquid-glass rounded-xl p-5 border border-amber-500/20 flex flex-col gap-3">
+                <h3 className="text-sm font-medium text-amber-200">Current testnet limits</h3>
+                <ul className="text-xs text-white/60 leading-relaxed space-y-2">
+                  <li>• SoroSwap is quote-only here; campaigns must be funded with testnet USDC directly.</li>
+                  <li>• Email delivery is not enabled; organizers export or copy claim links manually.</li>
+                  <li>• Production monitoring, Sentry, and public user-review metrics are still follow-up work.</li>
+                </ul>
+              </div>
+
               <div className="liquid-glass rounded-xl p-5 border border-white/10 flex flex-col gap-3">
                 <h3 className="text-sm font-medium text-white flex items-center gap-2">
-                  <Zap size={16} /> One-Line Pitch
+                  <ReRailLogo size={16} /> One-Line Pitch
                 </h3>
                 <blockquote className="text-sm italic text-white/80 border-l-2 border-white/30 pl-4 py-1">
                   &ldquo;Set up a grant. Send a link. Get paid — no XLM or prior wallet friction required.&rdquo;
@@ -265,7 +281,66 @@ export function DocsPage() {
             </div>
           )}
 
-          {/* SECTION 2: ARCHITECTURE */}
+          {/* SECTION 2: TESTNET REVIEW RUNBOOK */}
+          {activeSection === 'review-runbook' && (
+            <div className="flex flex-col gap-6">
+              <div className="border-b border-white/10 pb-4">
+                <span className="text-white/40 text-xs font-mono uppercase tracking-wider">
+                  Reviewer Guide
+                </span>
+                <h2 className="text-2xl font-medium text-white mt-1">
+                  Testnet Review Runbook
+                </h2>
+              </div>
+
+              <div className="liquid-glass rounded-xl p-5 border border-white/10">
+                <h3 className="text-sm font-medium text-white mb-3">Before you start</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-white/60">
+                  <div className="liquid-glass rounded-lg p-3">1. Use Stellar Testnet in your wallet.</div>
+                  <div className="liquid-glass rounded-lg p-3">2. Fund the organizer wallet with testnet USDC.</div>
+                  <div className="liquid-glass rounded-lg p-3">3. Keep the recipient wallet address ready.</div>
+                  <div className="liquid-glass rounded-lg p-3">4. Run on desktop for wallet extension support.</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="liquid-glass rounded-xl p-5 border border-white/10 flex flex-col gap-3">
+                  <h3 className="text-sm font-medium text-white">Organizer path</h3>
+                  <ol className="text-xs text-white/60 leading-relaxed space-y-2 list-decimal list-inside">
+                    <li>Log in with Google and open Dashboard.</li>
+                    <li>Create a new campaign with a future deadline.</li>
+                    <li>Connect the funded organizer wallet.</li>
+                    <li>Add recipients by CSV or manual input.</li>
+                    <li>Sign the claimable balance transaction batch.</li>
+                    <li>Copy or export generated claim links from the review screen.</li>
+                  </ol>
+                </div>
+
+                <div className="liquid-glass rounded-xl p-5 border border-white/10 flex flex-col gap-3">
+                  <h3 className="text-sm font-medium text-white">Recipient path</h3>
+                  <ol className="text-xs text-white/60 leading-relaxed space-y-2 list-decimal list-inside">
+                    <li>Open the claim link on desktop.</li>
+                    <li>Connect the wallet matching the recipient address.</li>
+                    <li>If needed, let ReRail sponsor account activation.</li>
+                    <li>If needed, enable the USDC trustline with a fee-bumped transaction.</li>
+                    <li>Claim USDC and open the Stellar Explorer transaction link.</li>
+                  </ol>
+                </div>
+              </div>
+
+              <div className="liquid-glass rounded-xl p-5 border border-white/10 flex flex-col gap-3">
+                <h3 className="text-sm font-medium text-white">What counts as a successful review</h3>
+                <ul className="text-xs text-white/60 leading-relaxed space-y-2">
+                  <li>• Campaign status becomes active after Horizon sync finds claimable balance IDs.</li>
+                  <li>• Recipient receives USDC with no XLM fee paid by the recipient wallet.</li>
+                  <li>• Campaign detail shows claimed status and an exportable recipient report.</li>
+                  <li>• Reviewer can share one friction point or bug for the documented iteration.</li>
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {/* SECTION 3: ARCHITECTURE */}
           {activeSection === 'architecture' && (
             <div className="flex flex-col gap-6">
               <div className="border-b border-white/10 pb-4">
@@ -334,7 +409,7 @@ export function DocsPage() {
             </div>
           )}
 
-          {/* SECTION 3: SECURITY */}
+          {/* SECTION 4: SECURITY */}
           {activeSection === 'security' && (
             <div className="flex flex-col gap-6">
               <div className="border-b border-white/10 pb-4">
@@ -352,7 +427,7 @@ export function DocsPage() {
                     <Shield size={16} className="text-green-400" /> Atomic Attempt Caps
                   </div>
                   <p className="text-xs text-white/60 leading-relaxed">
-                    Database function <code className="text-white/80">begin_gasless_op</code> limits gasless attempts (trustline, sponsor) to 5 tries per link to prevent fee-payer drainage attacks.
+                    Database function <code className="text-white/80">begin_gasless_op</code> limits gasless attempts (trustline, sponsor) per link to reduce fee-payer drainage risk.
                   </p>
                 </div>
 
@@ -390,8 +465,8 @@ export function DocsPage() {
                       </tr>
                       <tr>
                         <td className="py-2.5 px-3 font-medium text-white">Fee Payer Replay Flood</td>
-                        <td className="py-2.5 px-3">begin_gasless_op cap (5 attempts) + IP rate limits</td>
-                        <td className="py-2.5 px-3 text-green-400">Mitigated</td>
+                        <td className="py-2.5 px-3">begin_gasless_op attempt caps and strict inner transaction validation</td>
+                        <td className="py-2.5 px-3 text-amber-300">Reduced</td>
                       </tr>
                       <tr>
                         <td className="py-2.5 px-3 font-medium text-white">CSV Formula Injection</td>
@@ -405,7 +480,7 @@ export function DocsPage() {
             </div>
           )}
 
-          {/* SECTION 4: API REFERENCE */}
+          {/* SECTION 5: API REFERENCE */}
           {activeSection === 'api-reference' && (
             <div className="flex flex-col gap-6">
               <div className="border-b border-white/10 pb-4">
@@ -493,10 +568,25 @@ export function DocsPage() {
                   Builds and co-signs sponsored account activation & USDC trustline creation for new recipient wallets.
                 </p>
               </div>
+
+              <div className="liquid-glass rounded-xl p-5 border border-white/10 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="bg-blue-500/20 text-blue-400 font-mono text-xs px-2.5 py-1 rounded-md font-medium">
+                      POST
+                    </span>
+                    <code className="text-white text-xs font-mono">/api/campaign/sync</code>
+                  </div>
+                  <span className="text-[11px] text-white/40 font-mono">Organizer Auth</span>
+                </div>
+                <p className="text-xs text-white/60">
+                  Reads Horizon effects after a funding transaction and writes claimable balance IDs back to recipients.
+                </p>
+              </div>
             </div>
           )}
 
-          {/* SECTION 5: DEFI INTEGRATIONS */}
+          {/* SECTION 6: DEFI INTEGRATIONS */}
           {activeSection === 'defi-integrations' && (
             <div className="flex flex-col gap-6">
               <div className="border-b border-white/10 pb-4">
@@ -529,14 +619,14 @@ export function DocsPage() {
                   <div className="text-xs font-mono text-green-400 uppercase tracking-wider">DEX Router</div>
                   <h3 className="text-sm font-medium text-white">SoroSwap Pricing</h3>
                   <p className="text-xs text-white/60">
-                    Calculates real-time XLM-to-USDC swap rates during campaign funding wizard steps.
+                    Calculates XLM-to-USDC rates during campaign funding. Execution is intentionally disabled on testnet until liquidity and routing are verified.
                   </p>
                 </div>
               </div>
             </div>
           )}
 
-          {/* SECTION 6: FAQ */}
+          {/* SECTION 7: FAQ */}
           {activeSection === 'faq' && (
             <div className="flex flex-col gap-6">
               <div className="border-b border-white/10 pb-4">
@@ -585,7 +675,7 @@ export function DocsPage() {
       <footer className="bg-[#080808] border-t border-white/10 mt-auto py-8">
         <div className="max-w-7xl mx-auto px-6 sm:px-12 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-white/40">
           <div className="flex items-center gap-2">
-            <Zap size={16} className="text-white/60" />
+            <ReRailLogo size={16} className="text-white/60" />
             <span className="text-white/60 font-medium">ReRail Documentation</span>
             <span>© 2026</span>
           </div>

@@ -6,11 +6,50 @@ import type { User, Subscription } from '@supabase/supabase-js';
  */
 export class AuthService {
   /**
+   * Signs in a user with Email & Password.
+   */
+  static async signInWithEmail(email: string, password: string): Promise<User> {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    if (!data.user) {
+      throw new Error('Could not find user after login');
+    }
+
+    return data.user;
+  }
+
+  /**
+   * Registers a new user with Email & Password.
+   */
+  static async signUpWithEmail(email: string, password: string): Promise<{ user: User | null; sessionExists: boolean }> {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return {
+      user: data.user,
+      sessionExists: !!data.session,
+    };
+  }
+
+  /**
    * Initiates Google OAuth sign-in.
    */
   static async signInWithGoogle(): Promise<void> {
     const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google'
+      provider: 'google',
     });
 
     if (error) {
@@ -30,19 +69,25 @@ export class AuthService {
   }
 
   /**
-   * Gets the currently authenticated user.
+   * Gets the currently authenticated user safely.
    */
   static async getCurrentUser(): Promise<User | null> {
-    const { data, error } = await supabase.auth.getUser();
-
-    if (error) {
-      if (!error.message.includes('Auth session missing')) {
-        console.error('Error fetching current user:', error.message);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData?.session) {
+        return null;
       }
+
+      const { data, error } = await supabase.auth.getUser();
+
+      if (error) {
+        return null;
+      }
+
+      return data.user;
+    } catch {
       return null;
     }
-
-    return data.user;
   }
 
   /**

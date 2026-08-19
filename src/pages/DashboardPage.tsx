@@ -7,6 +7,7 @@ import { getCampaigns } from '@/lib/supabase/queries/campaigns';
 import { getRecipientsForCampaigns } from '@/lib/supabase/queries/recipients';
 import { CIRCLE_FAUCET_URL } from '@/config/constants';
 import { getPrice } from '@/lib/defi/reflector';
+import { NetworkBadge } from '@/components/NetworkBadge';
 import type { Database } from '@/lib/supabase/database.types';
 
 type Campaign = Database['public']['Tables']['campaigns']['Row'];
@@ -117,9 +118,7 @@ export function DashboardPage() {
         <header className="h-16 px-6 sm:px-8 liquid-glass border-b border-white/5 flex items-center justify-between sticky top-0 z-10">
           <div className="flex items-center gap-3">
             <h1 className="text-white font-medium text-lg">Dashboard</h1>
-            <span className="liquid-glass rounded-full px-2.5 py-0.5 text-xs text-white/50">
-              Stellar Testnet
-            </span>
+            <NetworkBadge />
           </div>
           <Link
             to="/campaigns/new"

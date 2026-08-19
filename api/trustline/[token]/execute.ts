@@ -26,6 +26,10 @@ function getStringBodyValue(body: any, key: string): string | null {
  * with a valid claim token open arbitrary trustlines at ReRail's expense.
  */
 export default async function handler(req: any, res: any) {
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

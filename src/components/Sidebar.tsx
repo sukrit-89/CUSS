@@ -1,6 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Zap,
   LayoutDashboard,
   PlusCircle,
   Settings,
@@ -10,6 +9,9 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { WalletButton } from '@/components/WalletButton';
+import { ReRailLogo } from '@/components/ReRailLogo';
+import { NetworkBadge } from '@/components/NetworkBadge';
+import { toast } from '@/stores/toast.store';
 
 export function Sidebar() {
   const location = useLocation();
@@ -25,17 +27,21 @@ export function Sidebar() {
 
   const handleSignOut = async () => {
     await signOut();
+    toast.info('Signed out');
     navigate('/');
   };
 
   return (
     <aside className="w-60 shrink-0 h-screen sticky top-0 hidden md:flex flex-col justify-between p-4 bg-[#080808] border-r border-white/10">
       <div>
-        {/* Logo */}
-        <Link to="/" className="flex items-center gap-2.5 px-3 py-3 text-white font-medium text-lg mb-6">
-          <Zap size={24} strokeWidth={1.5} />
-          <span>ReRail</span>
-        </Link>
+        {/* Logo & Network */}
+        <div className="flex items-center justify-between mb-6 px-1">
+          <Link to="/" className="flex items-center gap-2.5 text-white font-medium text-lg">
+            <ReRailLogo size={24} strokeWidth={1.5} />
+            <span>ReRail</span>
+          </Link>
+          <NetworkBadge compact />
+        </div>
 
         {/* Navigation */}
         <nav className="flex flex-col gap-1">

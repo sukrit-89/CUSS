@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ChevronDown,
-  Zap,
   Menu,
   X,
   ArrowRight,
   Link as LinkIcon,
   ShieldCheck,
+  Zap,
 } from 'lucide-react';
+import { ReRailLogo } from '@/components/ReRailLogo';
 
 import { PUBLIC_BG_VIDEO as BG_VIDEO } from '@/config/constants';
 
@@ -52,7 +53,7 @@ export function HeroPage() {
         <nav className="relative z-20 w-full max-w-7xl mx-auto px-6 sm:px-12 py-5 flex items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 text-white font-medium text-base">
-            <Zap size={22} strokeWidth={1.5} />
+            <ReRailLogo size={22} strokeWidth={1.5} />
             <span>ReRail</span>
           </Link>
 
@@ -206,19 +207,19 @@ export function HeroPage() {
 
             <div>
               <div className="text-white text-3xl sm:text-4xl font-medium tracking-tight">
-                10,000+
+                Testnet
               </div>
               <div className="text-white/40 text-xs uppercase tracking-wide mt-2">
-                Testnet claims processed
+                Ready for reviewer runs
               </div>
             </div>
 
             <div>
               <div className="text-white text-3xl sm:text-4xl font-medium tracking-tight">
-                &lt; 1 min
+                Native
               </div>
               <div className="text-white/40 text-xs uppercase tracking-wide mt-2">
-                Avg. claim time
+                Stellar primitives
               </div>
             </div>
           </div>
@@ -394,7 +395,7 @@ export function HeroPage() {
         <div className="max-w-7xl mx-auto px-6 sm:px-12 py-10 flex flex-col sm:flex-row items-center justify-between gap-4">
           {/* Left */}
           <div className="flex items-center gap-2">
-            <Zap size={18} strokeWidth={1.5} className="text-white/80" />
+            <ReRailLogo size={18} strokeWidth={1.5} className="text-white/80" />
             <span className="text-white/60 text-sm font-medium">ReRail</span>
             <span className="text-white/30 text-xs ml-2">© 2026</span>
           </div>

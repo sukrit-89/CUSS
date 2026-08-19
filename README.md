@@ -1,115 +1,230 @@
 # ReRail ⚡
 
-> **Gasless payout infrastructure built on Stellar.**  
+<div align="center">
+
+> **Gasless USDC payout infrastructure built on Stellar.**  
 > Set up a grant. Send a link. Get paid — no XLM or wallet friction required.
 
-![License](https://img.shields.io/badge/License-MIT-blue.svg)
-![Stellar](https://img.shields.io/badge/Stellar-Testnet-black?logo=stellar)
-![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript)
+[![CI Status](https://github.com/sukrit-89/CUSS/actions/workflows/ci.yml/badge.svg)](https://github.com/sukrit-89/CUSS/actions/workflows/ci.yml)
+[![Stellar](https://img.shields.io/badge/Stellar-Protocol%2021%2F22-black?logo=stellar)](https://stellar.org)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript)](https://www.typescriptlang.org)
+[![Vite](https://img.shields.io/badge/Vite-8.1-646CFF?logo=vite)](https://vite.dev)
+[![Tailwind](https://img.shields.io/badge/Tailwind_CSS-v4-38B2AC?logo=tailwind-css)](https://tailwindcss.com)
+[![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL%20%2B%20RLS-3ECF8E?logo=supabase)](https://supabase.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+</div>
 
 ---
 
 ## ⚡ What is ReRail?
 
-ReRail is an end-to-end gasless distribution platform on Stellar that allows organizations, hackathons, DAO organizers, and grant managers to send USDC payouts through shareable claim links.
+**ReRail** is an enterprise-grade, gasless payout and grant distribution platform built on the Stellar network. Designed specifically for hackathons, DAO grants, ecosystem funds, and bounty distributions, ReRail removes crypto onboarding friction entirely.
 
-Recipients can claim funds without holding XLM or paying gas fees. ReRail sponsors account reserves, trustline creation, and balance execution through Stellar native protocol primitives.
+Organizers deposit USDC into native Stellar Claimable Balances and generate secure, unique claim links. Recipients claim their funds directly into any Stellar wallet without ever needing to purchase or hold XLM for transaction fees or account reserves.
+
+---
+
+## 🏗️ Architecture & System Design
+
+ReRail operates via a hybrid non-custodial model:
+1. **Organizers** retain 100% control of funds via native Stellar Claimable Balances with reclaim time predicates.
+2. **The Serverless Backend** acts strictly as a fee sponsor and atomic registry — it never custodies user keys or private funds.
+
+```
+┌─────────────────┐       Create Campaign        ┌────────────────────────────┐
+│    ORGANIZER    │ ───────────────────────────> │      Stellar Testnet       │
+│ (Freighter/Kit) │                              │ (Native Claimable Balance) │
+└─────────────────┘                              └─────────────┬──────────────┘
+         │                                                     │
+         │ Shares Claim Link (/claim/:token)                   │ Non-Custodial
+         ▼                                                     │ Claim (0 Gas)
+┌─────────────────┐       Execute Claim          ┌─────────────▼──────────────┐
+│    RECIPIENT    │ ───────────────────────────> │    Vercel Serverless API   │
+│  (Brand New or  │                              │    (Fee-Bump Envelope)     │
+│ Existing Wallet)│                              └────────────────────────────┘
+```
 
 ---
 
 ## ✨ Key Features
 
-- 💸 **Gasless Claims:** Recipients pay **0 XLM**. All transaction fees are covered via native Fee-Bump transactions.
-- 🔗 **Shareable Claim Links:** Unique, secure UUID v4 claim URLs for every recipient.
-- 🔒 **Native Protocol Primitives:** Native Stellar Claimable Balances with time predicates — no complex smart contract risks.
-- ⚡ **Sponsored Reserves:** ReRail sponsors account activation and USDC trustlines for brand-new crypto users.
-- 🎨 **Liquid Glass UI:** Modern obsidian design system built with Geist typography and subtle glassmorphic styling.
-- 📊 **DeFi Intelligence:** Live Reflector Oracle USD prices, Blend Protocol APY yield projections, and SoroSwap DEX swap quotes.
-- 🛡️ **Gasless Security:** Atomic attempt caps (`begin_gasless_op`), SHA-256 token hashing, and strict Supabase Row Level Security (RLS).
+- 💸 **100% Gasless Claims:** All transaction fees are sponsored via native Stellar **Fee-Bump Envelopes**. Recipients pay **0 XLM**.
+- 🛡️ **Non-Custodial Claimable Balances:** Funds are locked directly in Stellar ledger state with an automatic reclaim deadline for organizers.
+- ⚡ **Automated Account Sponsorship:** Brand-new recipient wallets have their **1.5 XLM account reserve** and USDC trustline sponsored on demand.
+- 🎨 **Obsidian Liquid Glass Design:** State-of-the-art UI system with Geist typography, micro-interactions, and responsive layout.
+- 📊 **DeFi Intelligence Integrations:**
+  - **Reflector Oracle:** Live decentralized USD pricing and asset valuation.
+  - **Blend Protocol:** Projected yield earnings on pending/unclaimed balances.
+  - **SoroSwap:** Direct XLM → USDC swap routing quotes for funding campaigns.
+- 🔒 **Enterprise Security Architecture:**
+  - SHA-256 token hashing for all claim links stored at rest.
+  - Supabase Row Level Security (RLS) isolating organizer campaigns.
+  - Atomic serverless execution locks (`begin_gasless_op`) preventing race conditions and double-claims.
+  - Global liquid-glass Toast notification system.
 
 ---
 
-## 🏗️ Architecture & Stack
-
-- **Frontend:** React 19, TypeScript, Vite 8, Tailwind CSS v4, Zustand.
-- **Wallet Support:** `@creit.tech/stellar-wallets-kit` (Freighter, Albedo, Hana, xBull, Lobstr).
-- **Backend API:** Vercel Serverless Functions (`/api/*`).
-- **Database & Auth:** Supabase PostgreSQL with RLS + Google OAuth authentication.
-- **Stellar Network:** `@stellar/stellar-sdk` connecting to SDF Testnet / Mainnet.
+## 🔄 5-State Recipient Claim Flow
 
 ```
-Organizers ──→ ReRail Dashboard ──→ Funding Batch (Stellar SDK) ──→ Claimable Balances
-                                                                             │
-Recipients ──→ Claim Link (/claim/:token) ──→ Serverless Fee-Bump ───────────┘
+[1. Open Claim Link] ──> [2. Connect Stellar Wallet]
+                                │
+       ┌────────────────────────┴────────────────────────┐
+       ▼                                                 ▼
+[Wallet Not Activated]                         [Wallet Active, No Trustline]
+       │                                                 │
+[Sponsored Account Creation (0 XLM)]           [Sponsored USDC Trustline (0 XLM)]
+       │                                                 │
+       └────────────────────────┬────────────────────────┘
+                                ▼
+                       [3. Ready to Claim]
+                                │ (1-Click Claim)
+                                ▼
+                   [4. Serverless Fee-Bump Tx]
+                                │
+                                ▼
+                 [5. Payout Received on Stellar]
 ```
 
 ---
 
-## 📚 Documentation
+## 💻 Tech Stack
 
-Detailed technical documentation is available both in the web application at `/docs` and in the repository:
-
-- 📖 [Product Requirements Document (PRD)](./prd.md)
-- 🔌 [API Reference](./docs/API.md)
-- 🏗️ [System Architecture](./docs/ARCHITECTURE.md)
-- 🛡️ [Security Model](./docs/SECURITY.md)
-- ⚡ [Stellar Integration Guide](./docs/STELLAR_INTEGRATION.md)
+| Layer | Technology |
+|---|---|
+| **Frontend** | React 19, TypeScript, Vite 8, Tailwind CSS v4, Zustand |
+| **Design System** | Custom Liquid Glass Obsidian (`.liquid-glass`, Geist Font) |
+| **Wallets** | `@creit.tech/stellar-wallets-kit` (Freighter, Albedo, Hana, xBull, Lobstr) |
+| **Stellar SDK** | `@stellar/stellar-sdk` v16 (Protocol 21/22 Primitives) |
+| **Backend / API** | Vercel Serverless Functions (`/api/*` running on Node.js 22) |
+| **Database & Auth** | Supabase PostgreSQL with strict RLS & Email/OAuth Auth |
+| **DeFi Integrations** | Blend SDK, Reflector Oracle, SoroSwap API |
+| **CI/CD** | GitHub Actions (`.github/workflows/ci.yml`), `oxlint`, TypeScript |
 
 ---
 
-## 🚀 Quick Start (Local Development)
+## 🚀 Local Development Setup
 
 ### 1. Prerequisites
-- Node.js v20+ or Bun
-- Git
-- Supabase account or CLI
+- **Node.js** v20+ or **Bun** v1.2+
+- **Git**
+- **Freighter Wallet** browser extension ([freighter.app](https://www.freighter.app/))
 
-### 2. Environment Setup
-Clone the repository and create `.env` from template:
-
+### 2. Clone & Install
 ```bash
 git clone https://github.com/sukrit-89/CUSS.git rerail
 cd rerail
 bun install
 ```
 
-Configure your `.env` file:
+### 3. Configure Environment Variables
+Copy the example environment configuration:
+```bash
+cp .env.example .env
+```
+
+Fill in the required keys:
 ```env
+# Supabase Configuration
 VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-FEE_PAYER_SECRET=your-stellar-fee-payer-secret
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+
+# Stellar Network Configuration
+VITE_NETWORK=TESTNET
 VITE_HORIZON_URL=https://horizon-testnet.stellar.org
 VITE_NETWORK_PASSPHRASE="Test SDF Network ; September 2015"
 VITE_USDC_ISSUER=GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5
 VITE_CLAIM_LINK_BASE_URL=http://localhost:5173
+
+# Gasless Fee Payer Secret (SDF Testnet Funded)
+FEE_PAYER_SECRET=SD6X...your-stellar-secret-key
 ```
 
-### 3. Run Development Server
+### 4. Start Development Server
 ```bash
 bun run dev
 ```
-
-Open `http://localhost:5173` in your browser.
+Visit `http://localhost:5173` in your browser.
 
 ---
 
-## 🧪 Testing & Verification
+## 🌐 Vercel Production Deployment Guide
 
-Build validation:
+Deploying ReRail to Vercel takes under 3 minutes:
+
+### Step 1: Push Repository to GitHub
+Ensure all code and CI workflows are committed and pushed to your GitHub repository:
 ```bash
+git push origin main
+```
+
+### Step 2: Import Project on Vercel
+1. Log into your [Vercel Dashboard](https://vercel.com).
+2. Click **"Add New..."** → **"Project"**.
+3. Select your GitHub repository (`sukrit-89/CUSS` or your fork).
+4. **Framework Preset**: Select `Vite`.
+5. **Root Directory**: `./` (default).
+6. **Build Command**: `bun run build` (or `npm run build`).
+7. **Output Directory**: `dist`.
+
+### Step 3: Configure Environment Variables in Vercel
+Add the following environment variables in the Vercel project settings (**Settings** → **Environment Variables**):
+
+| Variable Name | Description | Environment |
+|---|---|---|
+| `VITE_SUPABASE_URL` | Your Supabase project URL | Production, Preview, Dev |
+| `VITE_SUPABASE_ANON_KEY` | Your Supabase public anonymous key | Production, Preview, Dev |
+| `SUPABASE_URL` | Your Supabase project URL (Serverless API) | Production, Preview, Dev |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role secret (Serverless API) | Production, Preview, Dev |
+| `FEE_PAYER_SECRET` | Stellar secret key for the gasless sponsor account | Production, Preview, Dev |
+| `VITE_NETWORK` | `TESTNET` (or `PUBLIC` for mainnet) | Production, Preview, Dev |
+| `VITE_HORIZON_URL` | `https://horizon-testnet.stellar.org` | Production, Preview, Dev |
+| `VITE_NETWORK_PASSPHRASE` | `Test SDF Network ; September 2015` | Production, Preview, Dev |
+| `VITE_USDC_ISSUER` | Circle Testnet USDC Issuer `GBBD47...` | Production, Preview, Dev |
+| `VITE_CLAIM_LINK_BASE_URL` | Your production domain (e.g. `https://rerail.vercel.app`) | Production, Preview, Dev |
+
+### Step 4: Deploy & Verify
+Click **"Deploy"**. Vercel will automatically build the React 19 frontend and deploy the serverless functions under `/api/*` defined in [`vercel.json`](./vercel.json).
+
+---
+
+## 🧪 Verification & Quality Checks
+
+Run the full automated test and lint suite locally before committing:
+
+```bash
+# Fast linting across the entire codebase
+bun run lint
+
+# TypeScript verification for frontend & serverless API
 bun run build
+bun run typecheck:api
+
+# Run the complete test & verification suite
+bun run verify
 ```
 
-Database migrations push:
-```bash
-npx supabase db push
-```
+---
+
+## 🛡️ Security & Privacy
+
+- **No Private Keys Stored**: ReRail never asks for, manages, or stores organizer or recipient private keys.
+- **SHA-256 Hashing**: Claim link tokens are hashed with SHA-256 before being stored in Supabase. A database leak cannot expose active claim links.
+- **Row Level Security (RLS)**: Organizers can only read, create, and update campaigns and recipients associated with their authenticated UUID.
+- **Atomic Concurrency Protection**: The serverless claim endpoint utilizes database-level row locks to eliminate double-spend and race-condition attacks.
 
 ---
 
 ## 📜 License
 
-MIT License © 2026 ReRail
+Distributed under the MIT License. See [LICENSE](./LICENSE) for more information.
+
+---
+
+<div align="center">
+Built with ⚡ on Stellar.
+</div>

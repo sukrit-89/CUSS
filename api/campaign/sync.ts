@@ -30,6 +30,10 @@ function getStringValue(source: any, key: string): string | null {
  * created for, which survives reordering and partial batches.
  */
 export default async function handler(req: any, res: any) {
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
