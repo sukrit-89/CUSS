@@ -1,15 +1,10 @@
 {
   "functions": {
     "api/**/*.ts": {
-      "runtime": "nodejs22.x",
       "maxDuration": 15
     }
   },
   "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "/api/$1"
-    },
     {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
