@@ -5,13 +5,14 @@
 > **Gasless USDC payout infrastructure built on Stellar.**  
 > Set up a grant. Send a link. Get paid — no XLM or wallet friction required.
 
-[![CI Status](https://github.com/sukrit-89/CUSS/actions/workflows/ci.yml/badge.svg)](https://github.com/sukrit-89/CUSS/actions/workflows/ci.yml)
-[![Stellar](https://img.shields.io/badge/Stellar-Protocol%2021%2F22-black?logo=stellar)](https://stellar.org)
-[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript)](https://www.typescriptlang.org)
-[![Vite](https://img.shields.io/badge/Vite-8.1-646CFF?logo=vite)](https://vite.dev)
-[![Tailwind](https://img.shields.io/badge/Tailwind_CSS-v4-38B2AC?logo=tailwind-css)](https://tailwindcss.com)
-[![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL%20%2B%20RLS-3ECF8E?logo=supabase)](https://supabase.com)
+[![CI Pipeline](https://github.com/sukrit-89/CUSS/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sukrit-89/CUSS/actions/workflows/ci.yml)
+[![Vercel Status](https://img.shields.io/badge/Vercel-Production%20Ready-black?logo=vercel&logoColor=white)](https://vercel.com)
+[![Stellar Protocol](https://img.shields.io/badge/Stellar-Protocol%2021%2F22-08B5E5?logo=stellar&logoColor=white)](https://stellar.org)
+[![Gasless](https://img.shields.io/badge/Gasless-0%20XLM%20Claim-22c55e?logo=lightning&logoColor=white)](https://stellar.org)
+[![React](https://img.shields.io/badge/React-19.0-61DAFB?logo=react&logoColor=black)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Tailwind](https://img.shields.io/badge/Tailwind_CSS-v4-38B2AC?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
+[![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL%20%2B%20RLS-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 </div>
