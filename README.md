@@ -419,7 +419,7 @@ See [`docs/SECURITY.md`](./docs/SECURITY.md) for the full threat model.
 
 We collect structured user feedback through a Google Form to guide development priorities.
 
-**[→ Fill out the ReRail Feedback Form](https://forms.google.com/REPLACE_WITH_YOUR_FORM_LINK)**
+**[→ Fill out the ReRail Feedback Form](https://docs.google.com/forms/d/1zHVwJ956-ucDepmAIdEKTJu7LpZRTl-e_91j6XyonNU/edit)**
 
 The form collects:
 - Full name and email
@@ -429,7 +429,7 @@ The form collects:
 - Open-ended improvement suggestions
 - Mainnet readiness sentiment
 
-**Exported responses:** [`docs/user_feedback.csv`](./docs/user_feedback.csv)
+**Exported responses:** [`docs/user_feedback.csv`](#Comming soon)
 
 > Replace the Google Form link above with your actual form URL after creating it at [forms.google.com](https://forms.google.com).
 
