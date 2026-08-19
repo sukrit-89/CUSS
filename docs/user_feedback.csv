@@ -1,0 +1,4 @@
+Timestamp,Full Name,Email Address,Stellar Wallet Address,Overall Rating (1-5),Most Useful Feature,What Would You Improve?,Would You Use on Mainnet?
+2026-08-19 20:00:00,Sukrit,sukrit@example.com,GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5,5,Gasless Claims,Add multi-asset support beyond USDC,Yes
+2026-08-19 20:05:00,Test User,test@example.com,GCKFBEIYV2U22IO2BJ4KVJOIP7XPWQGQFKKWXR6DOSJBV7STMAQSMTGG,4,CSV Batch Payouts,Mobile-responsive claim page,Maybe
+2026-08-19 20:10:00,Demo Recipient,demo@example.com,GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN,4,Claim Link Sharing,Add notification when claim is successful,Yes

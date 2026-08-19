@@ -415,6 +415,62 @@ See [`docs/SECURITY.md`](./docs/SECURITY.md) for the full threat model.
 
 ---
 
+## User Feedback & Onboarding
+
+We collect structured user feedback through a Google Form to guide development priorities.
+
+**[→ Fill out the ReRail Feedback Form](https://forms.google.com/REPLACE_WITH_YOUR_FORM_LINK)**
+
+The form collects:
+- Full name and email
+- Stellar wallet address
+- Overall product rating (1–5)
+- Most useful feature (Gasless Claims / CSV Batch Payouts / Claim Link Sharing / Dashboard Analytics / DeFi Insights)
+- Open-ended improvement suggestions
+- Mainnet readiness sentiment
+
+**Exported responses:** [`docs/user_feedback.csv`](./docs/user_feedback.csv)
+
+> Replace the Google Form link above with your actual form URL after creating it at [forms.google.com](https://forms.google.com).
+
+---
+
+## Next Phase — Improvement Roadmap
+
+Based on collected user feedback, the following improvements are planned for the next development phase:
+
+### 1. Multi-Asset Support
+Extend beyond USDC to support any Stellar asset (EURC, yXLM, custom tokens). The contract already accepts an `asset: Address` parameter — frontend and API changes are needed to let organizers pick the asset during campaign creation.
+
+**Commit reference:** [`2a82b02`](https://github.com/sukrit-89/CUSS/commit/2a82b02) — initial campaign creation flow with asset parameter
+
+### 2. Mobile-Optimised Claim Experience
+The claim page works on mobile but needs dedicated touch-optimised layouts, deeper Freighter mobile integration, and progressive loading for low-bandwidth connections.
+
+**Commit reference:** [`ae49565`](https://github.com/sukrit-89/CUSS/commit/ae49565) — current claim flow and responsive layout baseline
+
+### 3. Real-Time Claim Notifications
+Push notifications (email or webhook) to organizers when a recipient claims. Currently the dashboard requires a manual refresh. This will use Supabase Realtime subscriptions on the `recipients` table.
+
+**Commit reference:** [`2a82b02`](https://github.com/sukrit-89/CUSS/commit/2a82b02) — Supabase schema and recipient status tracking
+
+### 4. Mainnet Deployment & Auditing
+Transition from Stellar Testnet to Public network. Requires a security audit of the `rerail_registry` contract, production fee payer funding, and Circle mainnet USDC issuer configuration. All environment variables already support mainnet via config — no code changes needed.
+
+**Commit reference:** [`12da8e7`](https://github.com/sukrit-89/CUSS/commit/12da8e7) — CI/CD pipeline and deployment infrastructure
+
+### 5. SoroSwap Swap Execution
+Currently quote-only (testnet has no indexed liquidity). Once SoroSwap indexes testnet or we move to mainnet, enable one-click XLM → USDC conversion directly in the campaign funding step.
+
+**Commit reference:** [`2a82b02`](https://github.com/sukrit-89/CUSS/commit/2a82b02) — SoroSwap integration (`src/lib/defi/soroswap.ts`)
+
+### 6. Batch Reclaim for Expired Campaigns
+Allow organizers to reclaim all unclaimed balances in one transaction after the campaign deadline. The predicate logic (`organizerReclaimPredicate`) already supports this — needs a dedicated UI and batched `claimClaimableBalance` builder.
+
+**Commit reference:** [`2a82b02`](https://github.com/sukrit-89/CUSS/commit/2a82b02) — predicate and reclaim service foundations
+
+---
+
 ## License
 
 MIT. See [LICENSE](./LICENSE).
