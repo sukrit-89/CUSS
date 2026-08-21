@@ -32,6 +32,9 @@ export class AuthService {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/dashboard`,
+      },
     });
 
     if (error) {
@@ -50,6 +53,9 @@ export class AuthService {
   static async signInWithGoogle(): Promise<void> {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`,
+      },
     });
 
     if (error) {
