@@ -111,7 +111,7 @@ export function DashboardPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#080808] text-white flex">
+    <div className="min-h-screen bg-[#080808] text-white flex pb-20 md:pb-0">
       <Sidebar />
 
       <div className="flex-1 min-w-0 flex flex-col">

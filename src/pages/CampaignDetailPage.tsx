@@ -192,7 +192,7 @@ export function CampaignDetailPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#080808] text-white flex font-sans">
+    <div className="min-h-screen bg-[#080808] text-white flex font-sans pb-20 md:pb-0">
       <Sidebar />
       <div className="flex-1 min-w-0">
         <main className="p-6 sm:p-8 max-w-7xl">
