@@ -65,7 +65,7 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { campaignId, baseUrl } = req.body || {};
+  const { campaignId, recipientId, baseUrl } = req.body || {};
 
   if (!campaignId || !UUID_V4_RE.test(campaignId)) {
     return res.status(400).json({ error: 'Valid campaignId is required' });
@@ -91,11 +91,17 @@ export default async function handler(req: any, res: any) {
       return res.status(404).json({ error: 'Campaign not found' });
     }
 
-    const { data: recipients, error: recipientsError } = await supabase
+    let query = supabase
       .from('recipients')
       .select('id, name, email, amount, claim_link_token')
       .eq('campaign_id', campaignId)
       .not('email', 'is', null);
+
+    if (recipientId) {
+      query = query.eq('id', recipientId);
+    }
+
+    const { data: recipients, error: recipientsError } = await query;
 
     if (recipientsError) {
       return res.status(500).json({ error: 'Failed to fetch recipients' });
@@ -112,7 +118,19 @@ export default async function handler(req: any, res: any) {
     const domain = baseUrl || process.env.VITE_CLAIM_LINK_BASE_URL || 'https://cuss-pink.vercel.app';
     const resendApiKey = process.env.RESEND_API_KEY;
 
-    const results: Array<{ recipientId: string; email: string; success: boolean; simulated?: boolean }> = [];
+    // Standard Resend onboarding sender unless a verified domain from address is configured
+    const fromAddress = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+    const formattedFrom = fromAddress.includes('<')
+      ? fromAddress
+      : `ReRail Payouts <${fromAddress}>`;
+
+    const results: Array<{
+      recipientId: string;
+      email: string;
+      success: boolean;
+      simulated?: boolean;
+      error?: string;
+    }> = [];
 
     for (const recipient of validRecipients) {
       const claimUrl = `${domain}/claim/${recipient.claim_link_token}`;
@@ -134,23 +152,35 @@ export default async function handler(req: any, res: any) {
               Authorization: `Bearer ${resendApiKey}`,
             },
             body: JSON.stringify({
-              from: 'ReRail Payouts <payouts@rerail.app>',
+              from: formattedFrom,
               to: [recipient.email],
               subject: `You received ${amount} ${campaign.token} — ReRail Payout`,
               html,
             }),
           });
 
-          results.push({
-            recipientId: recipient.id,
-            email: recipient.email!,
-            success: resendRes.ok,
-          });
-        } catch {
+          const resendData = (await resendRes.json().catch(() => null)) as any;
+
+          if (resendRes.ok) {
+            results.push({
+              recipientId: recipient.id,
+              email: recipient.email!,
+              success: true,
+            });
+          } else {
+            results.push({
+              recipientId: recipient.id,
+              email: recipient.email!,
+              success: false,
+              error: resendData?.message || `Resend HTTP ${resendRes.status}`,
+            });
+          }
+        } catch (err: any) {
           results.push({
             recipientId: recipient.id,
             email: recipient.email!,
             success: false,
+            error: err?.message || 'Network error contacting email provider',
           });
         }
       } else {
@@ -167,7 +197,7 @@ export default async function handler(req: any, res: any) {
     const sentCount = results.filter((r) => r.success).length;
 
     return res.status(200).json({
-      success: true,
+      success: sentCount > 0,
       sent: sentCount,
       total: validRecipients.length,
       simulated: !resendApiKey,

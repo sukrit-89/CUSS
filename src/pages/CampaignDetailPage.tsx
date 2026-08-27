@@ -7,6 +7,7 @@ import {
   Check,
   Download,
   Loader2,
+  Mail,
   RotateCcw,
   Sparkles,
   Layers,
@@ -66,6 +67,7 @@ export function CampaignDetailPage() {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [reclaimState, setReclaimState] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
   const [reclaimMessage, setReclaimMessage] = useState('');
+  const [emailSending, setEmailSending] = useState(false);
 
   // Modal state
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -235,6 +237,36 @@ export function CampaignDetailPage() {
     toast.success('Recipient claim links CSV exported');
   };
 
+  const handleSendEmails = async (recipientId?: string) => {
+    if (!campaign) return;
+    setOptionsOpen(false);
+    setEmailSending(true);
+    try {
+      const res = await fetch('/api/notify/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campaignId: campaign.id,
+          recipientId,
+          baseUrl: CLAIM_LINK_BASE_URL,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to send email notification(s).');
+      }
+      toast.success(
+        data.simulated
+          ? `Dispatched claim email(s) to ${data.sent} recipient(s) (Preview Mode)`
+          : `Sent claim email(s) to ${data.sent} recipient(s)!`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to send emails.');
+    } finally {
+      setEmailSending(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#080808] text-white flex font-sans pb-20 md:pb-0">
       <Sidebar />
@@ -296,15 +328,24 @@ export function CampaignDetailPage() {
                       <div className="absolute right-0 top-full mt-2 w-56 liquid-glass rounded-2xl p-2 z-20 border border-white/10 shadow-2xl backdrop-blur-xl">
                         <button
                           onClick={exportCsv}
-                          className="w-full text-left px-3 py-2 text-xs text-white/80 hover:text-white hover:bg-white/10 rounded-lg flex items-center gap-2"
+                          className="w-full text-left px-3 py-2 text-xs text-white/80 hover:text-white hover:bg-white/10 rounded-lg flex items-center gap-2 cursor-pointer"
                         >
                           <Download size={14} /> Export CSV
                         </button>
 
                         <button
+                          onClick={() => handleSendEmails()}
+                          disabled={emailSending}
+                          className="w-full text-left px-3 py-2 text-xs text-white/80 hover:text-white hover:bg-white/10 rounded-lg flex items-center gap-2 cursor-pointer disabled:opacity-40"
+                        >
+                          <Mail size={14} />
+                          <span>{emailSending ? 'Sending emails...' : 'Send claim emails'}</span>
+                        </button>
+
+                        <button
                           onClick={handleReclaim}
                           disabled={reclaimState === 'busy' || !deadlinePassed}
-                          className="w-full text-left px-3 py-2 text-xs text-white/80 hover:text-white hover:bg-white/10 rounded-lg flex items-center gap-2 disabled:opacity-40"
+                          className="w-full text-left px-3 py-2 text-xs text-white/80 hover:text-white hover:bg-white/10 rounded-lg flex items-center gap-2 cursor-pointer disabled:opacity-40"
                         >
                           <RotateCcw size={14} />
                           <span>Reclaim expired funds</span>
