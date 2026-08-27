@@ -15,13 +15,14 @@ import { Sidebar } from '@/components/Sidebar';
 import { WalletButton } from '@/components/WalletButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ClaimPreviewModal } from '@/components/ClaimPreviewModal';
+import { CampaignDetailSkeleton } from '@/components/Skeleton';
 import { getCampaignById } from '@/lib/supabase/queries/campaigns';
 import { getRecipientsByCampaign } from '@/lib/supabase/queries/recipients';
+import { supabase } from '@/lib/supabase/client';
 import { CLAIM_LINK_BASE_URL } from '@/config/constants';
 import { downloadCSV, exportRecipientsCSV } from '@/features/campaigns/utils/csv-export';
 import { getUsdcSupplyApy, projectYield } from '@/lib/defi/blend';
 import { getPrice } from '@/lib/defi/reflector';
-import { ReclaimService } from '@/features/campaigns/services/reclaim.service';
 import { useWalletStore } from '@/stores/wallet.store';
 import { toast } from '@/stores/toast.store';
 import type { Database } from '@/lib/supabase/database.types';
@@ -92,6 +93,30 @@ export function CampaignDetailPage() {
     }
 
     load();
+
+    // Live claim updates for this campaign.
+    const channel = supabase
+      .channel(`campaign-${id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'recipients',
+          filter: `campaign_id=eq.${id}`,
+        },
+        (payload) => {
+          const updated = payload.new as Database['public']['Tables']['recipients']['Row'];
+          setRecipients((prev) =>
+            prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)),
+          );
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [id]);
 
   useEffect(() => {
@@ -164,14 +189,33 @@ export function CampaignDetailPage() {
       const organizer = wallet.publicKey;
       if (!organizer) throw new Error('Connect the organizer wallet to reclaim funds.');
 
-      const result = await ReclaimService.reclaimExpired(
-        campaign.id,
-        organizer,
-        useWalletStore.getState().signTransaction,
-      );
+      // Phase 1: Request unsigned inner tx from server
+      const prepareRes = await fetch(`/api/campaign/${campaign.id}/reclaim`, {
+        method: 'POST',
+      });
+      const prepareData = await prepareRes.json();
+
+      if (!prepareRes.ok || !prepareData.unsigned_inner_tx_xdr) {
+        throw new Error(prepareData.error || 'Failed to prepare reclaim transaction.');
+      }
+
+      // Phase 2: Sign inner tx with organizer wallet
+      const signedInnerXdr = await wallet.signTransaction(prepareData.unsigned_inner_tx_xdr);
+
+      // Phase 3: Submit signed inner tx to server for fee-bumping and submission
+      const submitRes = await fetch(`/api/campaign/${campaign.id}/reclaim`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signed_inner_tx_xdr: signedInnerXdr }),
+      });
+      const submitData = await submitRes.json();
+
+      if (!submitRes.ok || !submitData.success) {
+        throw new Error(submitData.error || 'Reclaim submission failed.');
+      }
 
       setReclaimState('done');
-      const msg = `Reclaimed ${result.reclaimed} unclaimed balance(s).`;
+      const msg = `Reclaimed ${submitData.reclaimed} unclaimed balance(s).`;
       setReclaimMessage(msg);
       toast.success(msg);
       setRecipients(await getRecipientsByCampaign(campaign.id));
@@ -196,11 +240,7 @@ export function CampaignDetailPage() {
       <Sidebar />
       <div className="flex-1 min-w-0">
         <main className="p-6 sm:p-8 max-w-7xl">
-          {isLoading && (
-            <div className="py-24 flex justify-center text-white/40">
-              <Loader2 className="animate-spin" size={32} />
-            </div>
-          )}
+          {isLoading && <CampaignDetailSkeleton />}
 
           {!isLoading && error && (
             <div className="liquid-glass rounded-2xl p-8 text-center text-red-300 text-sm">

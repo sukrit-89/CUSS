@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ExternalLink, Loader2, Plus } from 'lucide-react';
+import { ExternalLink, Plus, Rocket } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
 import { StatusBadge } from '@/components/StatusBadge';
+import { DashboardSkeleton } from '@/components/Skeleton';
 import { getCampaigns } from '@/lib/supabase/queries/campaigns';
 import { getRecipientsForCampaigns } from '@/lib/supabase/queries/recipients';
+import { supabase } from '@/lib/supabase/client';
 import { CIRCLE_FAUCET_URL } from '@/config/constants';
 import { getPrice } from '@/lib/defi/reflector';
 import { NetworkBadge } from '@/components/NetworkBadge';
@@ -36,11 +38,14 @@ export function DashboardPage() {
   const [usdcPrice, setUsdcPrice] = useState<number | null>(null);
 
   useEffect(() => {
+    let campaignIds: string[] = [];
+
     (async () => {
       try {
         const campaignRows = await getCampaigns();
         setCampaigns(campaignRows);
-        setRecipients(await getRecipientsForCampaigns(campaignRows.map((c) => c.id)));
+        campaignIds = campaignRows.map((c) => c.id);
+        setRecipients(await getRecipientsForCampaigns(campaignIds));
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load dashboard.');
       } finally {
@@ -49,6 +54,25 @@ export function DashboardPage() {
     })();
 
     getPrice().then(setUsdcPrice);
+
+    // Live claim updates via Supabase Realtime.
+    const channel = supabase
+      .channel('dashboard-recipients')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'recipients' },
+        (payload) => {
+          const updated = payload.new as Database['public']['Tables']['recipients']['Row'];
+          setRecipients((prev) =>
+            prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)),
+          );
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const campaignById = useMemo(
@@ -129,11 +153,7 @@ export function DashboardPage() {
         </header>
 
         <main className="p-6 sm:p-8 flex flex-col gap-8 max-w-7xl">
-          {isLoading && (
-            <div className="flex justify-center py-20 text-white/40">
-              <Loader2 size={32} className="animate-spin" />
-            </div>
-          )}
+          {isLoading && <DashboardSkeleton />}
 
           {!isLoading && error && (
             <div className="liquid-glass rounded-2xl p-6 text-center text-red-300 text-sm">
@@ -166,15 +186,23 @@ export function DashboardPage() {
               </a>
 
               {campaigns.length === 0 ? (
-                <div className="liquid-glass rounded-2xl p-8 text-center flex flex-col items-center gap-4">
-                  <p className="text-white/40 text-sm">
-                    No campaigns yet. Create your first payout to get started.
-                  </p>
+                <div className="liquid-glass rounded-2xl p-10 text-center flex flex-col items-center gap-5">
+                  <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center">
+                    <Rocket size={24} className="text-white/30" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-white/70 text-sm font-medium">
+                      Ready to distribute your first payout?
+                    </p>
+                    <p className="text-white/30 text-xs max-w-xs">
+                      Create a campaign, add recipients, and send gasless claim links — they get USDC without needing XLM.
+                    </p>
+                  </div>
                   <Link
                     to="/campaigns/new"
                     className="bg-white text-black font-medium text-sm rounded-full px-6 py-2.5 hover:bg-white/90 transition-colors"
                   >
-                    Start distributing
+                    Create your first campaign
                   </Link>
                 </div>
               ) : (
