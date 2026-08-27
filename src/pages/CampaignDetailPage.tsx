@@ -11,6 +11,8 @@ import {
   RotateCcw,
   Sparkles,
   Layers,
+  ExternalLink,
+  Send,
 } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
 import { WalletButton } from '@/components/WalletButton';
@@ -175,6 +177,18 @@ export function CampaignDetailPage() {
 
     await navigator.clipboard.writeText(text);
     toast.success(`Copied ${pending.length} pending claim link(s) to clipboard!`);
+  };
+
+  const copyFormattedList = async () => {
+    if (recipients.length === 0) return;
+    const formatted = recipients
+      .map(
+        (r, idx) =>
+          `${idx + 1}. ${r.name} (${amountOf(r, campaign).toFixed(2)} USDC): ${CLAIM_LINK_BASE_URL}/claim/${r.claim_link_token}`,
+      )
+      .join('\n');
+    await navigator.clipboard.writeText(formatted);
+    toast.success('Copied formatted claim links list (ready for Discord/Slack/Notion)!');
   };
 
   const deadlinePassed =
@@ -476,7 +490,16 @@ export function CampaignDetailPage() {
                       title="Copy all pending claim links to clipboard"
                     >
                       <Layers size={13} />
-                      <span>Copy All Pending</span>
+                      <span>Copy Pending</span>
+                    </button>
+
+                    <button
+                      onClick={copyFormattedList}
+                      className="liquid-glass rounded-full px-3.5 py-1.5 text-xs font-medium text-white/70 hover:text-white flex items-center gap-1.5 border border-white/10 hover:bg-white/5 cursor-pointer"
+                      title="Copy formatted names + links list"
+                    >
+                      <Copy size={13} />
+                      <span>Copy Formatted List</span>
                     </button>
 
                     <button
@@ -526,17 +549,40 @@ export function CampaignDetailPage() {
                               {recipient.claimed_at ? formatDate(recipient.claimed_at) : '—'}
                             </td>
                             <td className="px-5 py-4 text-right">
-                              <button
-                                onClick={() => copyLink(recipient)}
-                                className="liquid-glass text-white/70 hover:text-white text-xs px-3.5 py-1.5 rounded-full inline-flex items-center gap-1.5 border border-white/10 hover:bg-white/10 transition-colors cursor-pointer"
-                              >
-                                {copiedId === recipient.id ? (
-                                  <Check size={13} className="text-green-400" />
-                                ) : (
-                                  <Copy size={13} />
-                                )}
-                                <span>{copiedId === recipient.id ? 'Copied' : 'Copy link'}</span>
-                              </button>
+                              <div className="inline-flex items-center gap-1.5 justify-end">
+                                <button
+                                  onClick={() => copyLink(recipient)}
+                                  className="liquid-glass text-white/80 hover:text-white text-xs px-3 py-1.5 rounded-full inline-flex items-center gap-1.5 border border-white/10 hover:bg-white/10 transition-colors cursor-pointer"
+                                  title="Copy Claim Link"
+                                >
+                                  {copiedId === recipient.id ? (
+                                    <Check size={12} className="text-green-400" />
+                                  ) : (
+                                    <Copy size={12} />
+                                  )}
+                                  <span>{copiedId === recipient.id ? 'Copied' : 'Copy'}</span>
+                                </button>
+
+                                <a
+                                  href={`${CLAIM_LINK_BASE_URL}/claim/${recipient.claim_link_token}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="liquid-glass text-white/50 hover:text-white p-1.5 rounded-full border border-white/10 hover:bg-white/10 transition-colors inline-flex items-center"
+                                  title="Open & Test Claim Link"
+                                >
+                                  <ExternalLink size={12} />
+                                </a>
+
+                                <a
+                                  href={`https://wa.me/?text=${encodeURIComponent(`Hi ${recipient.name}, your ${amountOf(recipient, campaign).toFixed(2)} USDC payout is ready on ReRail: ${CLAIM_LINK_BASE_URL}/claim/${recipient.claim_link_token}`)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="liquid-glass text-white/50 hover:text-green-400 p-1.5 rounded-full border border-white/10 hover:bg-white/10 transition-colors inline-flex items-center"
+                                  title="Share on WhatsApp"
+                                >
+                                  <Send size={12} />
+                                </a>
+                              </div>
                             </td>
                           </tr>
                         ))}
