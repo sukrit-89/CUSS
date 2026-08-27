@@ -81,12 +81,11 @@ export default async function handler(req: any, res: any) {
   const supabase = createClient(supabaseUrl, supabaseKey);
   const server = new Horizon.Server(horizonUrl);
   const feePayer = Keypair.fromSecret(feePayerSecret);
-  const usdc = new Asset(usdcCode, usdcIssuer);
 
   try {
     const { data: recipient, error } = await supabase
       .from('recipients')
-      .select('id, campaign_id, wallet_address, status')
+      .select('id, campaign_id, wallet_address, status, campaigns(token, issuer)')
       .eq('claim_link_token', token)
       .single();
 
@@ -108,11 +107,16 @@ export default async function handler(req: any, res: any) {
       return res.status(409).json({ error: 'This account is already active on the network' });
     }
 
+    const campaign = Array.isArray(recipient.campaigns) ? recipient.campaigns[0] : recipient.campaigns;
+    const tokenCode = campaign?.token || usdcCode;
+    const tokenIssuer = campaign?.issuer || usdcIssuer;
+    const isNative = tokenCode === 'XLM' || tokenIssuer === 'native';
+
     // ── Phase 1: hand the recipient something to sign ───────────────────────
     if (!signedTxXdr) {
       const sponsorAccount = await server.loadAccount(feePayer.publicKey());
 
-      const tx = new TransactionBuilder(sponsorAccount, {
+      const builder = new TransactionBuilder(sponsorAccount, {
         fee: BASE_FEE,
         networkPassphrase,
       })
@@ -122,21 +126,24 @@ export default async function handler(req: any, res: any) {
             source: feePayer.publicKey(),
           }),
         )
-        // Sponsored creation, so the recipient needs no starting balance of
-        // their own — the sponsor holds the reserve.
         .addOperation(
           Operation.createAccount({
             destination: walletAddress,
             startingBalance: '0',
             source: feePayer.publicKey(),
           }),
-        )
-        .addOperation(Operation.changeTrust({ asset: usdc, source: walletAddress }))
-        .addOperation(
-          Operation.endSponsoringFutureReserves({ source: walletAddress }),
-        )
-        .setTimeout(TX_TIMEOUT_SECONDS)
-        .build();
+        );
+
+      if (!isNative) {
+        const asset = new Asset(tokenCode, tokenIssuer);
+        builder.addOperation(Operation.changeTrust({ asset, source: walletAddress }));
+      }
+
+      builder.addOperation(
+        Operation.endSponsoringFutureReserves({ source: walletAddress }),
+      );
+
+      const tx = builder.setTimeout(TX_TIMEOUT_SECONDS).build();
 
       return res.status(200).json({
         unsigned_tx_xdr: tx.toXDR(),
@@ -152,12 +159,9 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'Transaction source must be the ReRail fee payer' });
     }
 
-    const expected = [
-      'beginSponsoringFutureReserves',
-      'createAccount',
-      'changeTrust',
-      'endSponsoringFutureReserves',
-    ];
+    const expected = isNative
+      ? ['beginSponsoringFutureReserves', 'createAccount', 'endSponsoringFutureReserves']
+      : ['beginSponsoringFutureReserves', 'createAccount', 'changeTrust', 'endSponsoringFutureReserves'];
 
     if (
       operations.length !== expected.length ||
@@ -168,10 +172,9 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    const [begin, create, trust, end] = operations;
+    const begin = operations[0];
+    const create = operations[1];
 
-    // Every field the recipient could have tampered with to make ReRail pay
-    // for something other than activating this one account.
     if (begin.sponsoredId !== walletAddress) {
       return res.status(400).json({ error: 'Sponsored account does not match this claim link' });
     }
@@ -180,14 +183,18 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'Account creation does not match this claim link' });
     }
 
-    if (
-      trust.source !== walletAddress ||
-      trust.line?.getCode?.() !== usdcCode ||
-      trust.line?.getIssuer?.() !== usdcIssuer
-    ) {
-      return res.status(400).json({ error: 'Trustline asset must be the campaign USDC asset' });
+    if (!isNative) {
+      const trust = operations[2];
+      if (
+        trust.source !== walletAddress ||
+        trust.line?.getCode?.() !== tokenCode ||
+        trust.line?.getIssuer?.() !== tokenIssuer
+      ) {
+        return res.status(400).json({ error: `Trustline asset must be the campaign ${tokenCode} asset` });
+      }
     }
 
+    const end = operations[operations.length - 1];
     if (end.source !== walletAddress) {
       return res.status(400).json({ error: 'Sponsorship must end on the recipient account' });
     }

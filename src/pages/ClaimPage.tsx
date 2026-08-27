@@ -16,7 +16,7 @@ import {
   buildTrustlineInnerTransaction,
   hasTrustline,
 } from '@/lib/stellar';
-import { USDC_ASSET } from '@/config/stellar';
+import { getAssetByCode } from '@/config/stellar';
 import { CLAIM_POLL_INTERVAL_MS, EXPLORER_TX_BASE_URL, PUBLIC_BG_VIDEO } from '@/config/constants';
 
 type PageState =
@@ -195,7 +195,8 @@ export function ClaimPage() {
         return;
       }
 
-      if (!(await hasTrustline(wallet.publicKey, USDC_ASSET))) {
+      const claimAsset = getAssetByCode(claimData?.asset_code || 'USDC');
+      if (!claimAsset.isNative() && !(await hasTrustline(wallet.publicKey, claimAsset))) {
         setReadiness('no-trustline');
         return;
       }
@@ -204,7 +205,7 @@ export function ClaimPage() {
     } catch (err) {
       setStepError(err instanceof Error ? err.message : 'Could not read your account.');
     }
-  }, [expectedAddress, wallet.isWalletAvailable, wallet.isConnected, wallet.publicKey]);
+  }, [expectedAddress, claimData?.asset_code, wallet.isWalletAvailable, wallet.isConnected, wallet.publicKey]);
 
   useEffect(() => {
     if (isMobile || pageState !== 'pending') return;
@@ -271,14 +272,15 @@ export function ClaimPage() {
     }
   }, [wallet, token, evaluateReadiness]);
 
-  // ── State 3: enable USDC (fee-bumped by ReRail) ─────────────────────────
+  // ── State 3: enable asset trustline (fee-bumped by ReRail) ───────────────
   const handleAddTrustline = useCallback(async () => {
     if (!wallet.publicKey) return;
     setBusy(true);
     setStepError('');
 
     try {
-      const innerTxXdr = await buildTrustlineInnerTransaction(wallet.publicKey, USDC_ASSET);
+      const claimAsset = getAssetByCode(claimData?.asset_code || 'USDC');
+      const innerTxXdr = await buildTrustlineInnerTransaction(wallet.publicKey, claimAsset);
       const signedXdr = await wallet.signTransaction(innerTxXdr);
 
       const res = await fetch(`/api/trustline/${token}/execute`, {
@@ -289,16 +291,16 @@ export function ClaimPage() {
       const result = await res.json();
 
       if (!res.ok || !result.success) {
-        throw new Error(result.error || 'Failed to enable USDC.');
+        throw new Error(result.error || `Failed to enable ${claimData?.asset_code || 'asset'}.`);
       }
 
       await evaluateReadiness();
     } catch (err) {
-      setStepError(err instanceof Error ? err.message : 'Failed to enable USDC.');
+      setStepError(err instanceof Error ? err.message : `Failed to enable ${claimData?.asset_code || 'asset'}.`);
     } finally {
       setBusy(false);
     }
-  }, [wallet, token, evaluateReadiness]);
+  }, [wallet, token, claimData?.asset_code, evaluateReadiness]);
 
   // ── State 4: claim ──────────────────────────────────────────────────────
   const handleClaim = useCallback(async () => {

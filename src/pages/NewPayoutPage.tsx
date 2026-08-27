@@ -9,6 +9,7 @@ import {
   Download,
   ExternalLink,
   Loader2,
+  Mail,
   Plus,
   Upload,
 } from 'lucide-react';
@@ -31,13 +32,12 @@ import {
   quoteFailureMessage,
   type SwapQuote,
 } from '@/lib/defi/soroswap';
-import { USDC_ASSET } from '@/config/stellar';
+import { SUPPORTED_ASSETS } from '@/config/stellar';
 import {
   CIRCLE_FAUCET_URL,
   CLAIM_LINK_BASE_URL,
   DEFAULT_CLAIM_EXPIRY_SECONDS,
   NETWORK_PASSPHRASE,
-  USDC_ISSUER,
   XLM_RESERVE_PER_BALANCE,
 } from '@/config/constants';
 import { Asset, Transaction } from '@stellar/stellar-sdk';
@@ -95,6 +95,7 @@ export function NewPayoutPage() {
 
   // ── Step 1: details ──────────────────────────────────────────────────────
   const [campaignName, setCampaignName] = useState('');
+  const [selectedToken, setSelectedToken] = useState('USDC');
   const [defaultAmount, setDefaultAmount] = useState('');
   const [hasDeadline, setHasDeadline] = useState(true);
   const [deadline, setDeadline] = useState(defaultDeadlineValue);
@@ -126,6 +127,8 @@ export function NewPayoutPage() {
   const [copiedAll, setCopiedAll] = useState(false);
   const [registryProgress, setRegistryProgress] = useState('');
   const [registryWarning, setRegistryWarning] = useState('');
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailResult, setEmailResult] = useState<{ sent: number; total: number; simulated?: boolean } | null>(null);
   const [createdRecipients, setCreatedRecipients] = useState<
     Array<{
       id: string;
@@ -142,7 +145,11 @@ export function NewPayoutPage() {
   const wallet = useWalletStore();
   const auth = useAuthStore();
 
-  // ── Derived values ───────────────────────────────────────────────────────
+  const currentAssetOption = useMemo(
+    () => SUPPORTED_ASSETS.find((a) => a.code === selectedToken) ?? SUPPORTED_ASSETS[0],
+    [selectedToken],
+  );
+
   const totalDistribution = useMemo(
     () =>
       parsedRecipients.reduce((sum, r) => {
@@ -191,7 +198,7 @@ export function NewPayoutPage() {
 
     try {
       const [usdc, xlm] = await Promise.all([
-        getAssetBalance(wallet.publicKey, USDC_ASSET),
+        getAssetBalance(wallet.publicKey, currentAssetOption.asset),
         getAssetBalance(wallet.publicKey, Asset.native()),
       ]);
 
@@ -205,7 +212,7 @@ export function NewPayoutPage() {
       setBalanceState('error');
       setBalanceError(err instanceof Error ? err.message : 'Could not read balances.');
     }
-  }, [wallet.publicKey]);
+  }, [wallet.publicKey, currentAssetOption.asset]);
 
   const fetchQuote = useCallback(async () => {
     const amount = parseFloat(xlmToSwap);
@@ -306,15 +313,15 @@ export function NewPayoutPage() {
       // Fail before writing anything: a campaign whose treasury cannot cover
       // the pool would create half a batch of claimable balances and leave the
       // remaining recipients with dead links.
-      const treasuryUsdc = await getAssetBalance(wallet.publicKey, USDC_ASSET);
+      const treasuryBalance = await getAssetBalance(wallet.publicKey, currentAssetOption.asset);
 
-      if (treasuryUsdc === null) {
+      if (treasuryBalance === null) {
         throw new Error('This Stellar account does not exist yet. Fund it before creating a campaign.');
       }
 
-      if (parseFloat(treasuryUsdc) < totalDistribution) {
+      if (parseFloat(treasuryBalance) < totalDistribution) {
         throw new Error(
-          `Treasury holds ${treasuryUsdc} USDC but this campaign needs ${totalDistribution.toFixed(2)} USDC.`,
+          `Treasury holds ${treasuryBalance} ${currentAssetOption.code} but this campaign needs ${totalDistribution.toFixed(2)} ${currentAssetOption.code}.`,
         );
       }
 
@@ -322,8 +329,8 @@ export function NewPayoutPage() {
       const campaign = await campaignStore.createCampaign({
         organizer_id: auth.user.id,
         name: campaignName || `Payout ${new Date().toLocaleDateString()}`,
-        token: 'USDC',
-        issuer: USDC_ISSUER,
+        token: currentAssetOption.code,
+        issuer: currentAssetOption.issuer,
         amount_per_recipient: defaultAmount || '0',
         total_pool: totalDistribution.toString(),
         deadline: deadlineDate.toISOString(),
@@ -372,6 +379,7 @@ export function NewPayoutPage() {
       const draft = await CampaignActivationService.buildActivationTransactions({
         campaignId: campaign.id,
         organizerPublicKey: wallet.publicKey,
+        asset: currentAssetOption.asset,
         deadlineSeconds,
       });
 
@@ -446,6 +454,7 @@ export function NewPayoutPage() {
     deadline,
     hasDeadline,
     totalDistribution,
+    currentAssetOption,
     campaignStore,
     wallet,
   ]);
@@ -550,7 +559,34 @@ export function NewPayoutPage() {
 
                 <div>
                   <label className="text-white/50 text-xs font-medium uppercase tracking-wide block mb-2">
-                    Per-recipient amount (USDC)
+                    Payout Asset
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {SUPPORTED_ASSETS.map((asset) => {
+                      const isSelected = selectedToken === asset.code;
+                      return (
+                        <button
+                          key={asset.code}
+                          type="button"
+                          onClick={() => setSelectedToken(asset.code)}
+                          className={`liquid-glass rounded-xl p-3 flex flex-col items-center gap-1 border transition-all cursor-pointer ${
+                            isSelected
+                              ? 'border-white bg-white/10 text-white'
+                              : 'border-white/10 text-white/50 hover:text-white hover:bg-white/5'
+                          }`}
+                        >
+                          <span className="text-base font-semibold font-mono">{asset.symbol}</span>
+                          <span className="text-xs font-medium">{asset.code}</span>
+                          <span className="text-[10px] text-white/30">{asset.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-white/50 text-xs font-medium uppercase tracking-wide block mb-2">
+                    Per-recipient amount ({currentAssetOption.code})
                   </label>
                   <input
                     value={defaultAmount}
@@ -819,17 +855,68 @@ export function NewPayoutPage() {
                       </div>
                     )}
 
+                    {/* Email Claim Links Action */}
+                    {createdRecipients.some((r) => r.email && r.email.includes('@')) && (
+                      <div className="w-full liquid-glass rounded-2xl p-4 border border-white/10 flex flex-col gap-3 my-2 text-left">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-xs text-white/80 font-medium">
+                            <Mail size={14} className="text-white/60" />
+                            <span>Automated Email Notifications</span>
+                          </div>
+                          {emailResult && (
+                            <span className="text-[11px] text-green-300 font-mono">
+                              {emailResult.sent}/{emailResult.total} Sent {emailResult.simulated ? '(Preview Mode)' : ''}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-white/40 text-xs">
+                          Send claim link emails directly to recipients with registered email addresses.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!createdCampaignId) return;
+                            setEmailSending(true);
+                            try {
+                              const res = await fetch('/api/notify/email', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ campaignId: createdCampaignId, baseUrl: CLAIM_LINK_BASE_URL }),
+                              });
+                              const data = await res.json();
+                              if (!res.ok) throw new Error(data.error || 'Failed to send emails');
+                              setEmailResult(data);
+                              toast.success(
+                                data.simulated
+                                  ? `Dispatched claim emails to ${data.sent} recipient(s) (Preview Mode)`
+                                  : `Sent claim emails to ${data.sent} recipient(s)!`,
+                              );
+                            } catch (err) {
+                              toast.error(err instanceof Error ? err.message : 'Failed to send emails.');
+                            } finally {
+                              setEmailSending(false);
+                            }
+                          }}
+                          disabled={emailSending}
+                          className="bg-white/10 hover:bg-white/20 text-white text-xs font-medium rounded-full px-4 py-2 self-start transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                        >
+                          {emailSending ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} />}
+                          {emailSending ? 'Sending emails...' : 'Send claim emails to recipients'}
+                        </button>
+                      </div>
+                    )}
+
                     <div className="flex flex-wrap gap-3 justify-center">
                       <button
                         onClick={handleCopyAllLinks}
-                        className="bg-white text-black text-sm font-medium rounded-full px-6 py-2.5 flex items-center gap-2"
+                        className="bg-white text-black text-sm font-medium rounded-full px-6 py-2.5 flex items-center gap-2 cursor-pointer"
                       >
                         {copiedAll ? <Check size={15} className="text-green-600" /> : <Copy size={15} />}
                         {copiedAll ? 'Copied' : 'Copy all links'}
                       </button>
                       <button
                         onClick={handleExportCSV}
-                        className="liquid-glass text-white text-sm font-medium rounded-full px-6 py-2.5 flex items-center gap-2"
+                        className="liquid-glass text-white text-sm font-medium rounded-full px-6 py-2.5 flex items-center gap-2 cursor-pointer"
                       >
                         <Download size={15} /> Export CSV
                       </button>

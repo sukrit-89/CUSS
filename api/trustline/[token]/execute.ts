@@ -68,7 +68,7 @@ export default async function handler(req: any, res: any) {
     // the recipient's attempts.
     const { data: recipient, error } = await supabase
       .from('recipients')
-      .select('id, campaign_id, wallet_address, status')
+      .select('id, campaign_id, wallet_address, status, campaigns(token, issuer)')
       .eq('claim_link_token', token)
       .single();
 
@@ -83,6 +83,10 @@ export default async function handler(req: any, res: any) {
     if (!recipient.wallet_address || !StrKey.isValidEd25519PublicKey(recipient.wallet_address)) {
       return res.status(409).json({ error: 'Recipient wallet address is missing or invalid' });
     }
+
+    const campaign = Array.isArray(recipient.campaigns) ? recipient.campaigns[0] : recipient.campaigns;
+    const expectedToken = campaign?.token || usdcCode;
+    const expectedIssuer = campaign?.issuer || usdcIssuer;
 
     const innerTx = TransactionBuilder.fromXDR(signedInnerTxXdr, networkPassphrase) as any;
     const operations = innerTx.operations ?? [];
@@ -99,10 +103,10 @@ export default async function handler(req: any, res: any) {
     const assetCode = typeof line?.getCode === 'function' ? line.getCode() : null;
     const assetIssuer = typeof line?.getIssuer === 'function' ? line.getIssuer() : null;
 
-    if (assetCode !== usdcCode || assetIssuer !== usdcIssuer) {
+    if (assetCode !== expectedToken || (expectedIssuer !== 'native' && assetIssuer !== expectedIssuer)) {
       return res
         .status(400)
-        .json({ error: 'Trustline asset must be the campaign USDC asset' });
+        .json({ error: `Trustline asset must be the campaign ${expectedToken} asset` });
     }
 
     if (operationSource !== recipient.wallet_address) {
