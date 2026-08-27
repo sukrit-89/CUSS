@@ -1,81 +1,151 @@
-# ReRail — Demo & Walkthrough Script
-
-**Estimated length:** 3 to 5 minutes  
-**Goal:** Showcase the complete end-to-end flow of ReRail, emphasizing the gasless recipient experience and the enterprise-grade organizer tooling.
-
----
-
-## 1. Introduction & The Problem (0:00 - 0:45)
-*(Visual: Start on the ReRail Hero/Landing Page)*
-
-**Speaker:**  
-"Hi, welcome to ReRail. Today, I'm going to show you how we're solving one of the biggest points of friction in Web3: **distributing grants and payouts.** 
-
-Normally, if a DAO or a hackathon wants to send USDC to 50 people, every single recipient needs to already have a wallet, and they need to hold native tokens—like XLM—just to open a trustline and pay for gas. If they are new to Web3, they are completely stuck.
-
-ReRail fixes this. We are a **gasless USDC payout platform built on Stellar**. Organizers set up a grant, send a link, and recipients get paid—with zero XLM required. Let me show you how it works."
+# 🎬 ReRail — Product Demo Video Script
+> **Format:** Live-Action Screen Recording + Voiceover & Camera PiP  
+> **Target Duration:** ~3:30 – 4:00 minutes  
+> **Vibe / Tone:** Modern, confident, punchy, fast-paced (think Linear or Stripe product launches).  
+> **Key Message:** *"Set up a grant. Send a link. Get paid in USDC — zero gas, zero wallet funding required."*
 
 ---
 
-## 2. The Organizer Flow (0:45 - 2:00)
-*(Visual: Click 'Launch App'. Connect Freighter Wallet. Go to the 'New Payout' Dashboard.)*
-
-**Speaker:**  
-"I'm logged in as an Organizer. Let's create a new payout campaign—say, for our 'Q3 Hackathon Winners'. 
-
-I can add recipients manually or upload a CSV for bulk distributions. Let's add a couple of addresses. *(Type or paste a test address)*. 
-
-Because ReRail integrates with DeFi protocols, you'll see some smart insights here: 
-1. **SoroSwap integration** shows me exactly what my XLM is worth in USDC for funding.
-2. **Blend Protocol integration** projects the yield I could be earning if these funds sit unclaimed for too long.
-
-Once I review the batch, I click **Fund & Create**. 
-
-Behind the scenes, ReRail is using native **Stellar Claimable Balances** with a time-based reclaim predicate. I sign exactly one transaction to lock the USDC on-chain. Notice that ReRail never custodies my private keys or my funds."
-
-*(Visual: Transaction approves. The Dashboard shows the Active Campaign with Claim Links.)*
-
-"The campaign is live. I now have unique, secure claim links to send to my winners via email or Discord. Let's copy one of these links."
+## 📋 Pre-Recording Setup Checklist
+- [ ] **Browser Window 1 (Organizer):** Chrome with Freighter Wallet connected (holds testnet USDC & XLM). Logged in to ReRail Dashboard (`/dashboard`).
+- [ ] **Browser Window 2 (Recipient):** Clean Incognito Window with a *fresh/unfunded* Freighter wallet (0 XLM, 0 USDC).
+- [ ] **Sample CSV ready:** `hackathon_winners.csv` (2–3 recipient rows).
+- [ ] **Audio/Visual:** Upbeat, subtle tech/ambient background music (lowered during speech), smooth cursor transitions, 1080p/4K 60fps recording.
 
 ---
 
-## 3. The Recipient Flow — The 'Aha!' Moment (2:00 - 3:30)
-*(Visual: Open a new Incognito Window. Paste the Claim Link. Have a brand new, unfunded Freighter wallet ready.)*
+## ⏱️ Timeline & Shot Breakdown
 
-**Speaker:**  
-"Now, let's switch roles. I'm a recipient who just got a claim link in my email. 
-
-I open the link, and I see a beautiful, liquid-glass interface showing my pending claim for 100 USDC. 
-
-I connect my Freighter wallet. **Here is the magic:** this is a brand new wallet. It has 0 XLM. It doesn't even exist on the ledger yet. 
-
-When I click **Claim**, ReRail's serverless backend springs into action. 
-1. First, it **sponsors my account creation** and the 1.5 XLM reserve.
-2. Then, it **opens a USDC trustline** for me.
-3. Finally, I sign the claim transaction, but I don't pay gas. ReRail wraps it in a Stellar **Fee-Bump Envelope** and pays the fee for me.
-
-Boom. The claim is successful. I just received 100 USDC, and I didn't have to buy a single drop of XLM or jump through KYC hoops at an exchange to get gas money."
+```
+[0:00 - 0:30]  ⚡ THE HOOK: The Web3 Onboarding Nightmare
+[0:30 - 0:55]  💡 THE REVEAL: Introducing ReRail
+[0:55 - 1:55]  🚀 ACT I: The Organizer Experience (Campaign in 60s)
+[1:55 - 2:55]  ✨ ACT II: The 'Aha!' Moment (Gasless Recipient Claim)
+[2:55 - 3:35]  🛡️ ACT III: Architecture & Stellar Magic
+[3:35 - 4:00]  🎯 OUTRO: The Vision & Call To Action
+```
 
 ---
 
-## 4. Under the Hood & Security (3:30 - 4:15)
-*(Visual: Briefly show the Supabase dashboard or the GitHub architecture diagram)*
+## 🎬 Full Script & Screenplay
 
-**Speaker:**  
-"How do we do this securely? 
+### [0:00 - 0:30] ⚡ The Hook: The Onboarding Nightmare
+**Visual:** 
+- Fullscreen camera / clean animated title card. 
+- Cut to screen recording showing a confusing multi-step crypto flow (error popups: *"Insufficient XLM for trustline reserve"*, exchange KYC forms, gas fee calculator).
 
-ReRail uses an enterprise-grade stack. The backend runs on Vercel Serverless Functions with a Supabase PostgreSQL database. 
+**Audio / SFX:** Upbeat, modern synth intro starts. Fast-paced delivery.
 
-- **No Link Leaks:** All claim tokens are hashed with SHA-256 at rest. If the database leaks, the links are safe.
-- **Concurrency Protection:** Our endpoints use atomic database-level row locks. It is impossible to double-claim a link, even under a race-condition attack.
-- **On-Chain Auditing:** We also deploy an optional Soroban smart contract—`rerail_registry`—that mirrors the campaign lifecycle on-chain, proving exactly who claimed what, and when."
+**Speaker:**
+> *"Imagine you just won a hackathon, earned an open-source bounty, or received a scholarship. The organizer sends you 500 USDC on-chain."*
+> 
+> *"Sounds great, right? Until you try to claim it."*
+> 
+> *"Suddenly, you’re told: you can’t receive USDC until you buy XLM. You can't buy XLM without signing up for an exchange and waiting 3 days for KYC. And you can't pay network fees without holding native gas."*
+> 
+> *"90% of non-crypto natives drop out right here. Web3 payouts are broken."*
 
 ---
 
-## 5. Conclusion (4:15 - 4:30)
-*(Visual: Back to the ReRail Dashboard showing the recipient marked as 'Claimed')*
+### [0:30 - 0:55] 💡 The Reveal: Introducing ReRail
+**Visual:** 
+- Quick swoosh SFX. Transition to ReRail Hero Page (`rerail.vercel.app`).
+- Smooth scroll through the minimalist UI, highlighted value tags: **"Gasless Payouts"**, **"Instant Claim Links"**, **"Stellar Native"**.
 
-**Speaker:**  
-"ReRail makes Web3 grants as easy as sending a Stripe link. No gas, no onboarding friction, fully non-custodial. 
+**Speaker:**
+> *"Meet **ReRail** — the gasless payout infrastructure built on Stellar."*
+> 
+> *"ReRail turns complex batch distributions into a single shareable link. Organizers create campaigns in 60 seconds, and recipients claim real USDC directly to their wallets with **zero XLM, zero gas fees, and zero friction**."*
+> 
+> *"Let’s see it in action."*
 
-Thanks for watching our demo. Check out our GitHub for the full source code and documentation."
+---
+
+### [0:55 - 1:55] 🚀 Act I: The Organizer Experience
+**Visual:**
+- Click **"Launch App"** or **"Connect Wallet"**.
+- Navigate to **"Create Campaign"**.
+- Drag and drop `hackathon_winners.csv`. Show the instant client-side validation table.
+- Set deadline (e.g., 30 Days).
+- Click **"Create & Lock Funds"** -> Freighter popup triggers -> 1-click signature.
+- Redirect to Campaign Detail view showing generated claim links & dynamic statistics.
+
+**Speaker:**
+> *"I'm logged in as an event organizer. We just wrapped up our global hackathon, and we need to distribute prizes to our top teams."*
+> 
+> *(Dragging CSV onto screen)*
+> *"I drop in our winners CSV. ReRail immediately parses, validates every address, and protects against CSV injection."*
+> 
+> *"I set the total prize pool and an optional 30-day reclaim deadline."*
+> 
+> *(Clicking 'Create & Lock Funds')*
+> *"Now, watch this: With a single Freighter signature, ReRail leverages Stellar's native **Claimable Balances**. The USDC is locked trustlessly on-chain. Notice that ReRail **never takes custody** of my private keys or funds."*
+> 
+> *(Showing links table)*
+> *"Done. Our campaign is live. Each winner gets a unique, high-entropy claim link that I can drop into an email or Discord DM."*
+
+---
+
+### [1:55 - 2:55] ✨ Act II: The 'Aha!' Moment (Recipient Claim)
+**Visual:**
+- Cut to **Incognito Window**. Paste the claim link (`/claim/[token]`).
+- Screen reveals the claim page: *"You've received 250 USDC for Hackathon Prize!"*.
+- Open Freighter extension in top corner to show: **Balance: 0.00 XLM / Account Unfunded**.
+- Click **"Connect Wallet"** -> Click **"Claim USDC Gaslessly"**.
+- Progress states animate smoothly: *[Sponsoring Account...] -> [Setting Trustline...] -> [Submitting Fee-Bump...]*
+- Success confetti / checkmark explosion -> Display Transaction Hash on StellarExpert with 250 USDC added.
+
+**Audio / SFX:** Satisfying chime / whoosh upon successful claim confirmation.
+
+**Speaker:**
+> *"Now, let's step into the recipient's shoes."*
+> 
+> *"I just opened my claim link. I see exactly what I'm getting: 250 USDC from the Hackathon campaign."*
+> 
+> *"I connect my wallet. And look closely at my Freighter balance: **0.00 XLM**. This account is completely empty."*
+> 
+> *(Clicking 'Claim')*
+> *"I hit Claim. Watch what happens behind the scenes in under 4 seconds:"*
+> 
+> *1. ReRail’s serverless backend sponsors the account reserve.*  
+> *2. It establishes the USDC trustline automatically.*  
+> *3. It wraps my claim in a Stellar **Fee-Bump Transaction**, covering 100% of network fees.*
+> 
+> *"And boom! Confirmed on ledger. I just received 250 USDC without ever touching an exchange or spending a single penny on gas. That is the magic of ReRail."*
+
+---
+
+### [2:55 - 3:35] 🛡️ Act III: Architecture & Stellar Superpowers
+**Visual:**
+- Quick cut to the clean Architecture Diagram / Security docs from GitHub or slides.
+- Highlight key Stellar protocol primitives (Claimable Balances, Fee-Bumps, Time Predicates).
+
+**Speaker:**
+> *"Why did we build this on Stellar instead of traditional smart contracts?"*
+> 
+> *"Because Stellar gives us protocol-level superpowers:"*
+> 
+> - **Claimable Balances with Time Predicates:** *If a recipient fails to claim within 30 days, the organizer can reclaim unspent funds with a single click. No funds are ever lost in the void.*
+> - **Fee-Bump Transactions:** *True gasless execution without complex meta-transaction relayer contracts.*
+> - **Enterprise Security:** *UUID-v4 entropy, Row-Level Security on PostgreSQL, and zero custodial risk.*
+
+---
+
+### [3:35 - 4:00] 🎯 Outro: The Vision & Call to Action
+**Visual:**
+- Return to live app dashboard showing the real-time status update: *Recipient marked as 'Claimed'*.
+- Display closing slide with GitHub URL, Live Demo link, and Stellar Rise In Belt badge.
+
+**Speaker:**
+> *"ReRail is building the payout rail that Web3 has always deserved. From DAOs and bounties to global enterprise payroll — simple, auditable, and truly frictionless."*
+> 
+> *"Experience the live demo on Stellar Testnet today at **rerail.vercel.app**, and check out our open-source codebase on GitHub."*
+> 
+> *"Thank you for watching!"*
+
+---
+
+## 💡 Pro Presenter Tips
+1. **Pacing:** Keep energy high and conversational. Don't linger on loading screens — edit cuts tightly around ledger confirmation times.
+2. **Zoom & Focus:** Zoom in 150% on the Freighter wallet balance showing `0 XLM` right before claiming to emphasize the gasless capability.
+3. **Soundtrack:** Use royalty-free lofi-tech or ambient electro beats at 15% volume under the voiceover.
